@@ -1,0 +1,23 @@
+Hasta ahorita somos 4
+
+Lennin: Data scientis
+Lorena: Data analyst
+Héctor: Data analyst
+Albeiro: Software engineer
+
+First meet de equipo
+Realizada el día miércoles 02/09/2026
+
+Repostorio creado (Albeiro)
+
+
+SCRUM
+
+Sprint planning meet
+Lunes a las 9 am hora Colombia y 8 am hora México.
+
+Daily meet
+Todos los días a las 9 am hora Colombia y 8 am hora México.
+
+Sprint demo meet
+Jueves a las 11:30 hora Colombia y 10:30 hora México
