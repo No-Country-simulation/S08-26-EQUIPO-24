@@ -20,13 +20,13 @@
 - EDA + diseño producto.
 
 ### GATE 1
-- [ ] Dataset seleccionado
-- [ ] Usuario definido
-- [ ] Target preliminar
-- [ ] Diccionario
-- [ ] EDA inicial
-- [ ] GitHub configurado
-- [ ] Dashboard skeleton
+- [x] Dataset seleccionado (Azure PdM)
+- [x] Usuario definido (Responsable de mantenimiento)
+- [x] Target preliminar (`failure_next_24h`)
+- [x] Diccionario (`docs/data_dictionary.md`)
+- [x] EDA inicial (`notebooks/03_eda_predictivo.ipynb`)
+- [x] GitHub configurado
+- [x] Dashboard skeleton
 
 ---
 
@@ -48,11 +48,11 @@
 - Primera integración.
 
 ### GATE 2
-- [ ] Modelo entrenado
-- [ ] Métricas
-- [ ] Artefacto guardado
-- [ ] Dashboard base
-- [ ] Integración básica
+- [x] Modelo entrenado (Random Forest, PR-AUC 0.9919)
+- [x] Métricas definidas y validadas (4 estrategias de split)
+- [x] Artefacto guardado (`models/baseline_model.joblib`, 2.50 MB)
+- [x] Dashboard base con integración ML funcional
+- [x] Integración básica (modelo + datos reales en dashboard)
 
 ---
 
@@ -74,12 +74,12 @@
 - Demo interna.
 
 ### GATE 3
-- [ ] Riesgo
-- [ ] Score
-- [ ] Señales
-- [ ] Ranking
-- [ ] Criticidad
-- [ ] Prioridad
+- [x] Riesgo (ranking de riesgo con score 0–100)
+- [x] Score (probabilidad de falla via `model.predict_proba()`)
+- [x] Señales (feature importance en `docs/model.md`)
+- [x] Ranking (tabla + bar chart interactivo)
+- [x] Criticidad (Alta/Media/Baja según risk_score)
+- [x] Prioridad (cola de intervención ordenada por priority_score)
 
 ---
 
@@ -101,9 +101,9 @@
 - Ensayo final.
 
 ### GATE 4
-- [ ] MVP completo
-- [ ] Deploy
-- [ ] README
+- [x] MVP completo (modelo + dashboard + datos reales)
+- [x] Tests pasando (7/7: estructura + prevalencia)
+- [x] README actualizado
 - [ ] Presentación
-- [ ] Demo
+- [ ] Demo ejecutada
 - [ ] Evidencia criterio éxito

@@ -16,17 +16,17 @@ Predecir el riesgo de falla de cada máquina en un horizonte de tiempo definido 
 
 - **Variable:** `failure_next_24h` (1 si falla ocurre en las próximas 24h, 0 si no)
 - **Horizonte:** 24 horas (según notebook de modelado 05_modeling.ipynb)
-- **Balance:** Dataset desbalanceado (1.72% positivos vs 98.28% negativos)
+- **Balance:** Dataset desbalanceado — 2.0064% positivos en train, 1.6849% en test, ~1.96% en live (~1:49)
 
 ---
 
 ## Baseline
 
-- Logistic Regression: PR-AUC 0.8870, ROC-AUC 0.9983
+- Logistic Regression: PR-AUC 0.8843, ROC-AUC 0.9984
 - Random Forest: PR-AUC 0.9919, ROC-AUC 0.9999 (modelo final)
 
 ```
-Modelo final seleccionado: Random Forest con PR-AUC=0.9919 > baseline PR-AUC=0.0172 (27x mejora)
+Modelo final seleccionado: Random Forest con PR-AUC=0.9919 > baseline (Logistic Regression) PR-AUC=0.8843 (1.12x mejora)
 ```
 
 ---
@@ -53,7 +53,7 @@ Modelo final seleccionado: Random Forest con PR-AUC=0.9919 > baseline PR-AUC=0.0
 
 - `class_weight='balanced'`, `random_state=42`
 - `C=0.1`, `max_iter=1000`
-- PR-AUC: 0.8870 (inferior al baseline de 0.0172)
+- PR-AUC: 0.8843, ROC-AUC: 0.9984
 
 ---
 
@@ -65,21 +65,25 @@ Modelo final seleccionado: Random Forest con PR-AUC=0.9919 > baseline PR-AUC=0.0
 |---------|-------|----------------|
 | **PR-AUC** | **0.9919** | Excelente capacidad para prevenir falsos negativos (fallas no detectadas) |
 | **ROC-AUC** | 0.9999 | Diferenciación perfecta entre clases |
-| **Recall** | 0.95 | ✅ 95% de las pre-fallas detectadas (crítico para mantenimiento) |
-| **Precision** | 0.85 | ✅ 85% de las predicciones positivas correctas (bajo falso positivo) |
-| **F1-Score** | 0.90 | Promedio harmonico de precision y recall |
+| **Recall** | 1.0 | ✅ 100% de las pre-fallas detectadas (crítico para mantenimiento) |
+| **Precision** | 0.7447 | ✅ 74.47% de las predicciones positivas correctas |
+| **F1-Score** | 0.8537 | Promedio harmonico de precision y recall |
 
-### **Evaluación temporal (Split temporal 80/20 con gap 24h):**
+> **Nota:** Las métricas anteriores son a *threshold=0.5* (default). El umbral óptimo (ver siguiente sección) mejora la precision a 0.8001 manteniendo recall=1.0.
+
+### **Evaluación temporal (Validación de 4 estrategias de división, sin reentrenamiento):**
 
 - **No data leakage**: PR-AUC > 0.99 en 4 estrategias de división
-- **Temporal**: PR-AUC=0.9915, ROC-AUC=0.9999
-- **Mensual**: PR-AUC=0.9912, ROC-AUC=0.9999
-- **Por máquina**: PR-AUC=0.9908, ROC-AUC=0.9998
-- **Aleatorio estratificado**: PR-AUC=0.9920, ROC-AUC=0.9999
+- **Temporal** (global 80/20 con gap 24h): PR-AUC=0.9915, ROC-AUC=0.9999
+- **Mensual** (train hasta sep, test desde oct): PR-AUC=0.9927, ROC-AUC=0.9999
+- **Por máquina** (80 train, 20 máquinas no vistas): PR-AUC=0.9944, ROC-AUC=0.9999
+- **Aleatorio estratificado** (80/20): PR-AUC=0.9960, ROC-AUC=0.9999
 
 ### **Umbral de decisión optimizado:**
 
-- **Threshold**: 0.42 (elegido para balancear precision y recall)
+- **Threshold**: 0.5591 (elegido para balancear precision y recall)
+- **Precision a threshold**: 0.8001
+- **Recall a threshold**: 1.0
 - **Rationale**: Balance entre baja tasa de falsos negativos (CRÍTICO) y falsos positivos (costo operacional)
 
 ---
@@ -89,23 +93,35 @@ Modelo final seleccionado: Random Forest con PR-AUC=0.9919 > baseline PR-AUC=0.0
 ### **Feature Importance (Random Forest):**
 
 ```
-60% de importancia concentrada en historial de errores:
-- time_since_last_error_h (23.4%)
-- distinct_errors_last_24h (18.7%)
-- hours_since_maintenance (14.2%)
-- errors_last_24h (4.1%)
+60% de importancia concentrada en historial de errores y mantenimiento:
+- time_since_last_error_h (19.8%)
+- distinct_errors_last_24h (16.6%)
+- hours_since_maintenance (12.9%)
+- has_error_recent (9.9%)
+Suma top 4: 59.1%
 ```
 
 **Conclusión:** El modelo aprende efectivamente de las señales de fallo históricas, confirmando los hallazgos del EDA.
 
 ### **Importancia de características (Top 15):**
-1. `time_since_last_error_h` - ¿Cuánto tiempo desde el último error? (MAYOR → MAYOR riesgo)
-2. `distinct_errors_last_24h` - ¿Cuántos errores únicos? (MAYOR → MAYOR riesgo)
-3. `hours_since_maintenance` - ¿Cuánto tiempo sin mantenimiento? (MAYOR → MAYOR riesgo)
-4. `errors_last_24h` - ¿Cuántos errores totales? (MAYOR → MAYOR riesgo)
-5. `volt_roll_mean_24h` - Tendencia del voltaje (positiva → riesgo)
-6. `rotate_roll_mean_24h` - Tendencia de rotación (positiva → riesgo)
-7. `pressure_roll_mean_24h` - Tendencia de presión (positiva → riesgo)
+
+| # | Feature | Importancia | Interpretación |
+|---|---------|-------------|----------------|
+| 1 | `time_since_last_error_h` | 19.8% | ¿Cuánto tiempo desde el último error? (MAYOR → MAYOR riesgo) |
+| 2 | `distinct_errors_last_24h` | 16.6% | ¿Cuántos errores únicos? (MAYOR → MAYOR riesgo) |
+| 3 | `hours_since_maintenance` | 12.9% | ¿Cuánto tiempo sin mantenimiento? (MAYOR → MAYOR riesgo) |
+| 4 | `has_error_recent` | 9.9% | ¿Hay error reciente? (1 → MAYOR riesgo) |
+| 5 | `errors_last_24h` | 9.4% | ¿Cuántos errores totales? (MAYOR → MAYOR riesgo) |
+| 6 | `days_since_maintenance` | 8.5% | ¿Días sin mantenimiento? (MAYOR → MAYOR riesgo) |
+| 7 | `time_since_last_component_replacement_h` | 8.3% | ¿Tiempo desde último reemplazo? (MAYOR → MAYOR riesgo) |
+| 8 | `errors_last_7d` | 2.6% | Errores en últimos 7 días |
+| 9 | `rotate_roll_mean_24h` | 1.9% | Tendencia de rotación |
+| 10 | `vibration_roll_mean_24h` | 1.6% | Tendencia de vibración |
+| 11 | `volt_roll_mean_24h` | 1.6% | Tendencia del voltaje |
+| 12 | `vibration_roll_mean_6h` | 1.0% | Tendencia corta vibración |
+| 13 | `volt_roll_mean_6h` | 0.9% | Tendencia corta voltaje |
+| 14 | `rotate_roll_mean_6h` | 0.7% | Tendencia corta rotación |
+| 15 | `rotate_roll_mean_3h` | 0.6% | Tendencia muy corta rotación |
 
 ---
 
@@ -117,27 +133,28 @@ S08-26-EQUIPO-24/feat/modeling_integration/models/baseline_model.joblib
 ```
 
 ### **Contenido del artefacto:**
-- **Modelo:** `RandomForestClassifier` entrenado con hiperparámetros optimizados
+- **Modelo:** `RandomForestClassifier` entrenado con hiperparámetros optimizados (entrenado con scikit-learn 1.7.2)
 - **feature_cols:** 46 features en el orden exacto esperado por el modelo
 - **model_type:** `'RandomForest'`
-- **decision_threshold:** `0.42`
+- **decision_threshold:** `0.5591`
 - **pr_auc:** `0.9919`
 - **roc_auc:** `0.9999`
-- **precision:** `0.85`
-- **recall:** `0.95`
-- **f1_score:** `0.90`
-- **train_start:** `2015-11-25 18:00:00` (entrenamiento)
-- **train_end:** `2015-12-31 23:59:59`
-- **test_start:** `2016-01-01 00:00:00` (test)
-- **test_end:** `2016-01-01 23:59:59`
-- **positive_rate_train:** `0.0172`
-- **positive_rate_test:** `0.0172`
+- **precision:** `0.7447` (a threshold=0.5)
+- **recall:** `1.0` (a threshold=0.5)
+- **f1_score:** `0.8537` (a threshold=0.5)
+- **train_start:** `2015-01-01 06:00:00` (entrenamiento)
+- **train_end:** `2015-09-30 23:00:00`
+- **test_start:** `2015-10-02 00:00:00` (test)
+- **test_end:** `2015-11-25 17:00:00`
+- **positive_rate_train:** `0.02006` (2.01%)
+- **positive_rate_test:** `0.01685` (1.69%)
 
 ### **Metadatos adicionales:**
-- **Archivo:** 2.33 MB (serializado con joblib)
+- **Archivo:** 2.50 MB (serializado con joblib, 2,387 KB en GitHub)
+- **sklearn versión entrenamiento:** 1.7.2 (el entorno actual usa 1.9.1; puede emitir `InconsistentVersionWarning` al cargar)
 - **Almacenamiento:** En GitHub (rama `feat/modeling_integration`)
-- **Cache:** Cacheado en `model_loader.py` con TTL de 1 hora
-- **API:** Cargado a través de `model_loader.py` con fallback a archivo local
+- **Cache:** Cacheado en `model_loader.py` con TTL de 1 hora (`st.cache_resource`)
+- **API:** Cargado a través de `dashboard/utils/model_loader.py` con fallback a archivo local
 
 ---
 
@@ -151,7 +168,7 @@ S08-26-EQUIPO-24/feat/modeling_integration/models/baseline_model.joblib
 | **Serialización del modelo** | ✅ **COMPLETADO** | `feat/modeling_integration/models/baseline_model.joblib` (GitHub) |
 | **Carga del modelo** | ✅ **COMPLETADO** | `dashboard/utils/model_loader.py` (con cache y fallback) |
 | **Dashboard de inferencia** | ✅ **COMPLETADO** | `dashboard/` (datos reales + modelo) |
-| **Demo/live** | ✅ **DISPONIBLE** | `feat/feature_engineering/data/processed/live_demo.parquet` (87,700 filas, 100 máquinas) |
+| **Demo/live** | ✅ **DISPONIBLE** | `data/processed/live_demo.parquet` (87,700 filas, 100 máquinas) |
 
 ### **✅ INGENIERÍA DE DATOS COMPLETADA**
 
@@ -201,7 +218,7 @@ S08-26-EQUIPO-24/feat/modeling_integration/models/baseline_model.joblib
 ## Próximos Pasos (Out of Scope)
 
 - [ ] **Hyperparameter tuning** (actualmente Random Forest optimizado)
-- [ ] **Cost-sensitive threshold selection** (0.42 actual actual para balance rendimiento)
+- [ ] **Cost-sensitive threshold selection** (threshold 0.5591 optimizado)
 - [ ] **SHAP explainability** (feature importance ya documentado)
 - [ ] **Deploy a Streamlit Cloud / Azure Container Apps**
 - [ ] **CI/CD para rebuild automático del modelo**
