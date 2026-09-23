@@ -16,6 +16,35 @@ st.set_page_config(
     initial_sidebar_state='expanded'
 )
 
+
+def safe_rerun():
+    """Intenta reiniciar el script de Streamlit de forma compatible.
+
+    Algunas versiones de Streamlit no exponen `st.experimental_rerun`.
+    Esta función intenta usarlo y, si no existe, intenta lanzar la
+    excepción interna de rerun; si todo falla, muestra una advertencia
+    para que el usuario recargue manualmente la página.
+    """
+    if hasattr(st, "experimental_rerun"):
+        try:
+            st.experimental_rerun()
+            return
+        except Exception:
+            pass
+
+    # Intentar lanzar la excepción interna de rerun (varía según versión)
+    try:
+        from streamlit.runtime.scriptrunner.script_runner import RerunException
+        raise RerunException()
+    except Exception:
+        try:
+            # Fallback a ubicaciones antiguas
+            from streamlit.scriptrunner import RerunException
+            raise RerunException()
+        except Exception:
+            st.warning('No es posible reiniciar programáticamente en esta versión de Streamlit. Por favor, refresca la página manualmente.')
+            return
+
 # ── Estilos CSS personalizados (tema oscuro premium) ──
 st.markdown("""
 <style>
@@ -90,23 +119,48 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Carga de datos reales ─────────────────────────────────────────────────
-live_df, data_source = load_live_demo_data()
-df_machines, df_risk, df_telemetry, df_errors = compute_risk_from_model(live_df)
-model, feature_cols, meta, model_source = get_model()
-
-# ═══════════════════════════════════════════════
-# BARRA LATERAL
-# ═══════════════════════════════════════════════
+# ── Selector de origen y control de recarga (sidebar inicial)
 with st.sidebar:
     st.markdown("""
     <div style='text-align:center; padding: 8px 0 4px 0;'>
         <div style='font-size: 2rem;'>🔧</div>
         <div style='font-size: 1.1rem; font-weight: 700; color: #60a5fa; letter-spacing: -0.3px;'>PredictiveMaintenance</div>
         <div style='font-size: 0.7rem; color: #64748b; margin-top: 2px;'>S08-26-EQUIPO-24</div>
-        <div style='margin-top: 8px; display: inline-block; background: rgba(34,197,94,0.15); border: 1px solid #22c55e; border-radius: 20px; padding: 2px 10px; font-size: 0.7rem; color: #22c55e;'>● EN VIVO</div>
     </div>
     """, unsafe_allow_html=True)
+    st.divider()
+
+    source_choice = st.radio('Origen de datos', options=['GitHub', 'Local'], index=0)
+    prefer_local = source_choice == 'Local'
+
+    st.caption('Elija `Local` para forzar uso de archivos en disco (desarrollo).')
+
+    if st.button('🔄 Recargar modelo y datos', key='reload_choice'):
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
+        try:
+            st.cache_resource.clear()
+        except Exception:
+            pass
+        safe_rerun()
+
+# Cargar datos y modelo (usando la preferencia seleccionada)
+try:
+    with st.spinner('Cargando datos y modelo...'):
+        live_df, data_source = load_live_demo_data(prefer_local=prefer_local)
+        df_machines, df_risk, df_telemetry, df_errors = compute_risk_from_model(live_df, prefer_local_model=prefer_local)
+        model, feature_cols, meta, model_source = get_model(prefer_local=prefer_local)
+except Exception as e:
+    st.error(f"Error al cargar datos o modelo: {e}")
+    st.stop()
+
+# ═══════════════════════════════════════════════
+# BARRA LATERAL
+# ═══════════════════════════════════════════════
+with st.sidebar:
+    st.markdown(f"**Fuente de datos:** {data_source}")
     st.divider()
 
     # Info del modelo
@@ -125,7 +179,7 @@ with st.sidebar:
     # Selector de máquina
     machine_ids = df_machines['machine_id'].tolist()
     selected_machine = st.selectbox(
-        ' Máquina',
+        'Máquina',
         options=machine_ids,
         index=0
     )
@@ -133,7 +187,7 @@ with st.sidebar:
     # Filtro de estado
     status_options = ['Crítico', 'Moderado', 'Estable']
     selected_status = st.multiselect(
-        ' Filtro de estado',
+        'Filtro de estado',
         options=status_options,
         default=['Crítico', 'Moderado', 'Estable']
     )
@@ -141,7 +195,7 @@ with st.sidebar:
     # Filtro de criticidad
     criticality_options = ['Alta', 'Media', 'Baja']
     selected_criticality = st.multiselect(
-        ' Filtro de criticidad',
+        'Filtro de criticidad',
         options=criticality_options,
         default=criticality_options
     )
@@ -150,13 +204,25 @@ with st.sidebar:
 
     # Metadatos rápidos de la máquina seleccionada
     machine_row = df_machines[df_machines['machine_id'] == selected_machine].iloc[0]
-    st.subheader(' Metadatos')
+    st.subheader('Metadatos')
     st.write(f'**ID:** {machine_row["machine_id"]}')
     st.write(f'**Tipo:** {machine_row["type"]}')
     st.write(f'**Ubicación:** {machine_row["location"]}')
     st.write(f'**Horas operación:** {machine_row["operating_hours"]} h')
     st.write(f'**Último mantenimiento:** {machine_row["last_maintenance"]}')
     st.write(f'**Días sin mantenimiento:** {machine_row["days_since_maintenance"]}')
+
+    # Botón para forzar recarga de datos y modelo
+    if st.button('🔄 Recargar modelo y datos', key='reload_sidebar'):
+        try:
+            st.cache_data.clear()
+        except Exception:
+            pass
+        try:
+            st.cache_resource.clear()
+        except Exception:
+            pass
+        safe_rerun()
 
 # ═══════════════════════════════════════════════
 # CONTENEDOR PRINCIPAL
@@ -307,8 +373,9 @@ with tab2:
     # Métricas dinámicas basadas en la máquina seleccionada
     df_sel = df_telemetry[df_telemetry['machine_id'] == selected_machine]
     if not df_sel.empty:
-        latest = df_sel.sort_values('timestamp').iloc[-1]
-        first  = df_sel.sort_values('timestamp').iloc[0]
+        df_sel_sorted = df_sel.sort_values('timestamp')
+        first = df_sel_sorted.iloc[0]
+        latest = df_sel_sorted.iloc[-1]
 
         temp_delta  = latest['temperature'] - first['temperature']
         vib_delta   = latest['vibration']   - first['vibration']
@@ -363,7 +430,10 @@ with tab3:
             with c2:
                 st.markdown(f"**{row['machine_id']}** — {row['type']}")
                 st.caption(f"📍 {row['location']} · {row['days_since_maintenance']}d sin mantenimiento")
-                st.progress(int(row['risk_score']), text=f"Riesgo: {row['risk_score']}%")
+                # `st.progress` espera un valor entre 0 y 1
+                prog = float(row['risk_score']) / 100.0
+                prog = max(0.0, min(1.0, prog))
+                st.progress(prog)
             with c3:
                 st.markdown(f"<span style='color:{level_color}; font-weight:600;'>● {row['risk_level']}</span> · Criticidad {row['criticality']}", unsafe_allow_html=True)
             with c4:

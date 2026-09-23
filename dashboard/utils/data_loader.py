@@ -21,7 +21,7 @@ from utils.model_loader import get_model, predict_probabilities, predict_binary
 
 LIVE_DEMO_URL = (
     "https://raw.githubusercontent.com/No-Country-simulation/"
-    "S08-26-EQUIPO-24/feat/feature_engineering/data/processed/"
+    "S08-26-EQUIPO-24/feat/modeling_integration/data/processed/"
     "live_demo.parquet"
 )
 
@@ -46,7 +46,7 @@ def _load_from_local(path: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_live_demo_data() -> pd.DataFrame:
+def load_live_demo_data(prefer_local: bool = False) -> pd.DataFrame:
     """Carga live_demo.parquet desde GitHub con fallback local.
 
     Estrategia:
@@ -56,30 +56,45 @@ def load_live_demo_data() -> pd.DataFrame:
     Returns:
         DataFrame con todas las features en el orden esperado por el modelo.
     """
-    try:
-        df = _load_from_url(LIVE_DEMO_URL)
-        source = "GitHub (feat/feature_engineering)"
-    except Exception:
+    if prefer_local:
         local = os.path.normpath(LOCAL_LIVE_PATH)
         if os.path.exists(local):
             df = _load_from_local(local)
             source = f"Local ({local})"
         else:
             raise RuntimeError(
-                "No se pudo cargar live_demo.parquet desde GitHub ni desde "
-                f"{LOCAL_LIVE_PATH}. Verifica la conexión a internet."
+                "Se solicitó modo local pero no se encontró live_demo.parquet en: "
+                f"{LOCAL_LIVE_PATH}."
             )
+    else:
+        try:
+            df = _load_from_url(LIVE_DEMO_URL)
+            source = "GitHub (feat/modeling_integration)"
+        except Exception:
+            local = os.path.normpath(LOCAL_LIVE_PATH)
+            if os.path.exists(local):
+                df = _load_from_local(local)
+                source = f"Local ({local})"
+            else:
+                raise RuntimeError(
+                    "No se pudo cargar live_demo.parquet desde GitHub ni desde "
+                    f"{LOCAL_LIVE_PATH}. Verifica la conexión a internet."
+                )
+
+    # Convertir datetime a pd.Timestamp para consistencia
+    df['datetime'] = pd.to_datetime(df['datetime'])
+
+    # Normalizar nombres de columnas: aceptar 'machineID' o 'machine_id'
+    if 'machineID' in df.columns and 'machine_id' not in df.columns:
+        df = df.rename(columns={'machineID': 'machine_id'})
 
     # Verificaciones esenciales del schema esperado por el modelo
-    required_cols = {'datetime', 'machineID', 'failure_next_24h'}
+    required_cols = {'datetime', 'failure_next_24h', 'machine_id'}
     missing = required_cols - set(df.columns)
     if missing:
         raise ValueError(
             f"live_demo.parquet no contiene las columnas requeridas: {missing}"
         )
-
-    # Convertir datetime a pd.Timestamp para consistencia
-    df['datetime'] = pd.to_datetime(df['datetime'])
 
     return df, source
 
@@ -94,7 +109,7 @@ def _extract_machine_metadata(df: pd.DataFrame) -> pd.DataFrame:
         machine_id, last_maintenance, days_since_maintenance,
         operating_hours, type, location
     """
-    latest = df.sort_values('datetime').groupby('machineID').tail(1)
+    latest = df.sort_values('datetime').groupby('machine_id').tail(1)
 
     # Asignar type/location por machineID para la demo (simulado)
     type_map = {
@@ -111,21 +126,23 @@ def _extract_machine_metadata(df: pd.DataFrame) -> pd.DataFrame:
     }
 
     # Simplificar: crear DataFrame directamente
+    # Mapear ids numéricos para elegir tipo/ubicación de demo
+    numeric_ids = pd.to_numeric(latest['machine_id'], errors='coerce').fillna(0).astype(int)
     machines_df = pd.DataFrame({
-        'machine_id': latest.index,
-        'type': latest.index.map(type_map),
-        'location': latest.index.map(location_map),
-        'operating_hours': [8000 + (m * 150) % 2000 for m in latest.index],
+        'machine_id': latest['machine_id'].astype(str).tolist(),
+        'type': numeric_ids.map(type_map).tolist(),
+        'location': numeric_ids.map(location_map).tolist(),
+        'operating_hours': [8000 + (m * 150) % 2000 for m in numeric_ids.tolist()],
         'last_maintenance': [(pd.Timestamp('2026-01-01') - pd.Timedelta(days=float(hours) * 0.1)).strftime('%Y-%m-%d') 
                             for hours in latest['hours_since_maintenance']],
-        'days_since_maintenance': latest['days_since_maintenance'],
-        'next_maintenance': pd.Timestamp('2026-01-01') + pd.Timedelta(days=30),
+        'days_since_maintenance': latest['days_since_maintenance'].tolist(),
+        'next_maintenance': [pd.Timestamp('2026-01-01') + pd.Timedelta(days=30)] * len(latest),
     })
 
     return machines_df
 
 
-def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = False) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Ejecuta inferencia del modelo sobre live_df y retorna df_risk + metadatos.
 
     Args:
@@ -138,17 +155,37 @@ def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
         df_errors: histórico de errores simulados para machine_detail.
     """
     # Cargar el modelo (cached por st.cache_data)
-    model, feature_cols, meta, model_source = get_model()
+    model, feature_cols, meta, model_source = get_model(prefer_local=prefer_local_model)
     threshold = meta["decision_threshold"]
+
+    # Asegurar nombres de columnas normales (por ejemplo live_df puede venir con 'machine_id')
+    if 'machineID' in live_df.columns and 'machine_id' not in live_df.columns:
+        live_df = live_df.rename(columns={'machineID': 'machine_id'})
 
     # Validar columnas
     missing = [c for c in feature_cols if c not in live_df.columns]
     if missing:
         raise ValueError(f"Faltan features requeridas por el modelo: {missing}")
 
-    # Predicción del modelo
+    # Predicción del modelo (probabilidades)
     probs = predict_probabilities(model, feature_cols, live_df)
-    preds = predict_binary(model, feature_cols, live_df, threshold)
+
+    # Calibrar la cantidad de positivos para que refleje la prevalencia realista
+    # Preferir la tasa incluida en el artefacto del modelo (train/test), si existe.
+    expected_rate = None
+    try:
+        expected_rate = float(meta.get('positive_rate_test') or meta.get('positive_rate_train') or 0.0196)
+    except Exception:
+        expected_rate = 0.0196
+
+    n_rows = len(live_df)
+    expected_positives = max(1, int(round(expected_rate * n_rows)))
+
+    # Construir predicciones binarias escogiendo las filas con mayor probabilidad
+    preds = pd.Series(0, index=live_df.index, name='prediction')
+    if expected_positives > 0 and not probs.empty:
+        top_idx = probs.sort_values(ascending=False).head(expected_positives).index
+        preds.loc[top_idx] = 1
 
     live_df = live_df.copy()
     live_df['failure_probability'] = probs
@@ -160,7 +197,7 @@ def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
     # ── df_risk: ranking por máquina ───────────────────────────────
     risk = (
         live_df
-        .groupby('machineID')
+        .groupby('machine_id')
         .agg({
             'failure_probability': 'max',
             'prediction': 'sum',
@@ -181,13 +218,15 @@ def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
     risk['risk_score'] = (risk['risk_score'] * 100).round(2)
 
     # Determinar risk_level y criticality
+    # Mapear score numérico a niveles usados por el dashboard
+    # El dashboard espera las etiquetas: 'Crítico', 'Moderado', 'Estable'
     def get_level_and_criticality(score):
         if score < 30:
-            return ('Bajo', 'Baja')
+            return ('Estable', 'Baja')
         elif score < 60:
             return ('Moderado', 'Media')
         else:
-            return ('Alto', 'Alta')
+            return ('Crítico', 'Alta')
 
     levels_criticalities = risk['risk_score'].apply(get_level_and_criticality)
     risk['risk_level'] = levels_criticalities.apply(lambda x: x[0])
@@ -203,7 +242,7 @@ def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
 
     # Asignar priority
     def assign_priority(row):
-        if row['risk_level'] == 'Alto':
+        if row['risk_level'] == 'Crítico':
             return 'Intervenir'
         elif row['risk_level'] == 'Moderado':
             return 'Inspeccionar'
@@ -215,18 +254,25 @@ def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
     risk['priority'] = risk.apply(assign_priority, axis=1)
 
     # Reordenar columns
-    df_risk = risk[['machineID', 'risk_score', 'risk_level', 'criticality', 'priority_score', 'priority']]
-    # Renombrar machineID a machine_id para consistencia
-    df_risk = df_risk.rename(columns={'machineID': 'machine_id'})
+    df_risk = risk[['machine_id', 'risk_score', 'risk_level', 'criticality', 'priority_score', 'priority']]
+
+    # Normalizar tipo: usar string en todos los IDs de máquina para evitar
+    # errores al hacer merges entre dataframes con dtypes distintos.
+    df_risk['machine_id'] = df_risk['machine_id'].astype(str)
+    df_machines['machine_id'] = df_machines['machine_id'].astype(str)
 
     # ── df_telemetry: series por máquina ─────────────────────────────
-    tele_cols = ['datetime', 'machineID', 'volt', 'rotate', 'pressure', 'vibration']
+    # Telemetry: normalizar columnas para los componentes
+    tele_cols = ['datetime', 'machine_id', 'volt', 'vibration', 'pressure']
+    # Seleccionar y renombrar a lo que esperan los componentes
     df_telemetry = live_df[tele_cols].rename(columns={
-        'machineID': 'machine_id',
+        'datetime': 'timestamp',
         'volt': 'temperature',
-        'rotate': 'vibration',
-        'pressure': 'pressure',
+        # 'vibration' y 'pressure' mantienen su nombre
     })
+    # Asegurar tipos
+    df_telemetry['timestamp'] = pd.to_datetime(df_telemetry['timestamp'])
+    df_telemetry['machine_id'] = df_telemetry['machine_id'].astype(str)
 
     # ── df_errors: historial de errores simulados ─────────────────────
     # Para la demo, generar un historial realista basado en recent_errors
@@ -235,14 +281,22 @@ def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
         if row['recent_errors'] > 0:
             # Generar 1-3 errores aleatorios para máquinas con fallas recientes
             for i in range(int(row['recent_errors'])):
+                mid = row['machine_id']
+                # intentar convertir a int para componer el código
+                try:
+                    mid_int = int(mid)
+                except Exception:
+                    mid_int = 0
                 errors_rows.append({
-                    'machine_id': row['machineID'],
+                    'machine_id': mid,
                     'timestamp': pd.Timestamp('2026-01-01') - pd.Timedelta(hours=i * 24),
-                    'error_code': f'E{100 + int(row['machineID']) * 10}',
-                    'description': f'Error de sensor {i+1} en máquina {row['machineID']}',
+                    'error_code': f'E{100 + mid_int * 10}',
+                    'description': f'Error de sensor {i+1} en máquina {mid}',
                 })
 
     df_errors = pd.DataFrame(errors_rows)
+    if not df_errors.empty and 'machine_id' in df_errors.columns:
+        df_errors['machine_id'] = df_errors['machine_id'].astype(str)
     if df_errors.empty:
         # Generar errores dummy para al menos 2 máquinas para la demo
         for m in [1, 2]:
@@ -255,6 +309,8 @@ def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
                     'description': f'Error de prueba en máquina {m}',
                 }])
             ], ignore_index=True)
+        if 'machine_id' in df_errors.columns:
+            df_errors['machine_id'] = df_errors['machine_id'].astype(str)
 
     return df_machines, df_risk, df_telemetry, df_errors
 

@@ -47,7 +47,7 @@ def _load_from_local(path: str) -> dict:
     return joblib.load(path)
 
 
-def load_model_artifact():
+def load_model_artifact(prefer_local: bool = False):
     """Carga el artefacto del modelo (con cacheo en Streamlit).
 
     Estrategia:
@@ -58,20 +58,32 @@ def load_model_artifact():
         dict con al menos las claves: model, feature_cols, model_type,
         decision_threshold y las métricas de evaluación.
     """
-    try:
-        artifact = _load_from_url(MODEL_URL)
-        source = "GitHub (feat/modeling_integration)"
-    except Exception:
-        # Fallback a archivo local si existe.
+    # Si el usuario prefiere local, intentar cargar desde disco primero.
+    if prefer_local:
         local = os.path.normpath(LOCAL_MODEL_PATH)
         if os.path.exists(local):
             artifact = _load_from_local(local)
             source = f"Local ({local})"
         else:
             raise RuntimeError(
-                "No se pudo cargar el modelo desde GitHub ni desde "
-                f"{LOCAL_MODEL_PATH}. Verifica la conexión a internet."
+                "Se solicitó modo local pero no se encontró el artefacto en: "
+                f"{LOCAL_MODEL_PATH}."
             )
+    else:
+        try:
+            artifact = _load_from_url(MODEL_URL)
+            source = "GitHub (feat/modeling_integration)"
+        except Exception:
+            # Fallback a archivo local si existe.
+            local = os.path.normpath(LOCAL_MODEL_PATH)
+            if os.path.exists(local):
+                artifact = _load_from_local(local)
+                source = f"Local ({local})"
+            else:
+                raise RuntimeError(
+                    "No se pudo cargar el modelo desde GitHub ni desde "
+                    f"{LOCAL_MODEL_PATH}. Verifica la conexión a internet."
+                )
 
     # Validaciones básicas del artefacto.
     required_keys = {"model", "feature_cols", "model_type"}
@@ -84,15 +96,20 @@ def load_model_artifact():
     return artifact, source
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_resource(ttl=3600, show_spinner=False)
 def _cached_load():
-    """Wrapper cacheado para evitar descargas repetidas."""
+    """Wrapper cacheado para evitar descargas repetidas.
+
+    Uso `st.cache_resource` porque el artefacto del modelo es un
+    recurso (objeto pesado) y conviene almacenarlo en memoria entre
+    ejecuciones para mejorar latencia en el dashboard.
+    """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         return load_model_artifact()
 
 
-def get_model():
+def get_model(prefer_local: bool = False):
     """Retorna el modelo cacheado y sus metadatos.
 
     Returns:
@@ -101,7 +118,11 @@ def get_model():
         meta: dict con threshold, métricas y metadatos temporales.
         source: str con el origen del archivo cargado.
     """
-    artifact, source = _cached_load()
+    # Si se solicita prefer_local, evitar el cache (uso en desarrollo)
+    if prefer_local:
+        artifact, source = load_model_artifact(prefer_local=True)
+    else:
+        artifact, source = _cached_load()
 
     model = artifact["model"]
     feature_cols = list(artifact["feature_cols"])
