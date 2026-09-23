@@ -194,10 +194,11 @@ with kpi2:
     )
 
 with kpi3:
-    next_maint = df_machines['next_maintenance'].min()
+    # Convert next_maintenance timestamp to string for display
+    next_maint_date = df_machines['next_maintenance'].min().strftime('%Y-%m-%d') if not df_machines['next_maintenance'].isna().all() else 'N/A'
     st.metric(
         label='📅 Próximo Mantenimiento',
-        value=next_maint,
+        value=next_maint_date,
         delta='más próximo programado'
     )
 

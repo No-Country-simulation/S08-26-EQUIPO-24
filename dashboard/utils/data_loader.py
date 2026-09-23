@@ -91,15 +91,10 @@ def _extract_machine_metadata(df: pd.DataFrame) -> pd.DataFrame:
     """Extrae últimos metadatos por máquina desde live_df.
 
     Retorna DataFrame con:
-        machineID, last_maintenance, days_since_maintenance,
+        machine_id, last_maintenance, days_since_maintenance,
         operating_hours, type, location
     """
     latest = df.sort_values('datetime').groupby('machineID').tail(1)
-
-    # Asegurar que 'type' y 'location' estén presentes (pueden ser NaN en raw)
-    # En el notebook actual, estas columnas NO están en features_dataset.parquet
-    # por lo que necesitamos predecir valores plausibles para el demo.
-    # Para el dashboard, asumimos un mapeo simple basado en machineID.
 
     # Asignar type/location por machineID para la demo (simulado)
     type_map = {
@@ -115,29 +110,17 @@ def _extract_machine_metadata(df: pd.DataFrame) -> pd.DataFrame:
         9: 'Planta I', 10: 'Planta J'
     }
 
-    machines_df = (
-        latest
-        .groupby('machineID')
-        .agg({
-            'datetime': 'max',
-            'hours_since_maintenance': 'min',
-            'days_since_maintenance': 'min',
-            'maintenance_count_30d': 'max',
-        })
-        .reset_index()
-        .assign(
-            type=lambda d: d['machineID'].map(type_map),
-            location=lambda d: d['machineID'].map(location_map),
-            operating_hours=lambda d: 8000 + (d['machineID'] * 150) % 2000,
-            last_maintenance=lambda d: (pd.Timestamp('2026-01-01') - pd.Timedelta(days=d['hours_since_maintenance'] * 0.1)).strftime('%Y-%m-%d'),
-            next_maintenance=lambda d: (pd.Timestamp('2026-01-01') + pd.Timedelta(days=30)).strftime('%Y-%m-%d'),
-        )
-        .reindex(columns=[
-            'machineID', 'type', 'location', 'operating_hours',
-            'last_maintenance', 'days_since_maintenance',
-            'next_maintenance'
-        ])
-    )
+    # Simplificar: crear DataFrame directamente
+    machines_df = pd.DataFrame({
+        'machine_id': latest.index,
+        'type': latest.index.map(type_map),
+        'location': latest.index.map(location_map),
+        'operating_hours': [8000 + (m * 150) % 2000 for m in latest.index],
+        'last_maintenance': [(pd.Timestamp('2026-01-01') - pd.Timedelta(days=float(hours) * 0.1)).strftime('%Y-%m-%d') 
+                            for hours in latest['hours_since_maintenance']],
+        'days_since_maintenance': latest['days_since_maintenance'],
+        'next_maintenance': pd.Timestamp('2026-01-01') + pd.Timedelta(days=30),
+    })
 
     return machines_df
 
@@ -155,7 +138,7 @@ def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
         df_errors: histórico de errores simulados para machine_detail.
     """
     # Cargar el modelo (cached por st.cache_data)
-    model, feature_cols, meta, source = get_model()
+    model, feature_cols, meta, model_source = get_model()
     threshold = meta["decision_threshold"]
 
     # Validar columnas
@@ -198,17 +181,23 @@ def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
     risk['risk_score'] = (risk['risk_score'] * 100).round(2)
 
     # Determinar risk_level y criticality
-    bins = [0, 30, 60, 100]
-    labels = ['Bajo', 'Moderado', 'Alto']
-    risk['risk_level'] = pd.cut(risk['risk_score'], bins=bins, labels=labels, include_lowest=True)
+    def get_level_and_criticality(score):
+        if score < 30:
+            return ('Bajo', 'Baja')
+        elif score < 60:
+            return ('Moderado', 'Media')
+        else:
+            return ('Alto', 'Alta')
 
-    level_map = {'Bajo': 'Baja', 'Moderado': 'Media', 'Alto': 'Alta'}
-    risk['criticality'] = risk['risk_level'].map(level_map)
+    levels_criticalities = risk['risk_score'].apply(get_level_and_criticality)
+    risk['risk_level'] = levels_criticalities.apply(lambda x: x[0])
+    risk['criticality'] = levels_criticalities.apply(lambda x: x[1])
 
     # Calcular priority_score (riesgo × criticidad × impacto)
+    crit_map = {'Baja': 1.0, 'Media': 2.0, 'Alta': 3.0}
     risk['priority_score'] = (
         risk['risk_score'] * 
-        {'Baja': 1.0, 'Media': 2.0, 'Alta': 3.0}[risk['criticality']] * 
+        risk['criticality'].map(crit_map) * 
         (1 + risk['recent_errors'] * 0.5)
     ).round(2)
 
@@ -227,6 +216,8 @@ def compute_risk_from_model(live_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
 
     # Reordenar columns
     df_risk = risk[['machineID', 'risk_score', 'risk_level', 'criticality', 'priority_score', 'priority']]
+    # Renombrar machineID a machine_id para consistencia
+    df_risk = df_risk.rename(columns={'machineID': 'machine_id'})
 
     # ── df_telemetry: series por máquina ─────────────────────────────
     tele_cols = ['datetime', 'machineID', 'volt', 'rotate', 'pressure', 'vibration']
