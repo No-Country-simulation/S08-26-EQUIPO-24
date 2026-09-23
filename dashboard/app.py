@@ -6,7 +6,8 @@ from components.risk_table import render_risk_table
 from components.sensor_chart import render_sensor_chart
 from components.machine_detail import render_machine_detail
 from components.priority_list import render_priority_list
-from utils.data_loader import load_mock_data
+from utils.data_loader import load_live_demo_data, compute_risk_from_model
+from utils.model_loader import get_model
 
 st.set_page_config(
     page_title='PredictiveMaintenance',
@@ -89,8 +90,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Carga de datos de ejemplo (placeholder) ──
-df_machines, df_risk, df_telemetry, df_errors = load_mock_data()
+# ── Carga de datos reales ─────────────────────────────────────────────────
+live_df, data_source = load_live_demo_data()
+df_machines, df_risk, df_telemetry, df_errors = compute_risk_from_model(live_df)
+model, feature_cols, meta, model_source = get_model()
 
 # ═══════════════════════════════════════════════
 # BARRA LATERAL
@@ -105,6 +108,19 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     st.divider()
+
+    # Info del modelo
+    st.markdown("""
+    <div style='padding: 12px; border-radius: 8px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); margin-bottom: 16px;'>
+        <div style='font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em;'>Modelo ML</div>
+        <div style='font-weight: 600; color: #60a5fa; margin-top: 4px;'>Fuente: {model_source}</div>
+        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 4px;'>PR-AUC: {meta.get("pr_auc", 0):.4f}</div>
+        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Threshold: {meta.get("decision_threshold", 0):.3f}</div>
+        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Features: {len(feature_cols)}</div>
+        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Entrenamiento: {meta.get("train_start", "?")} → {meta.get("train_end", "?")}</div>
+        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Test: {meta.get("test_start", "?")} → {meta.get("test_end", "?")}</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Selector de máquina
     machine_ids = df_machines['machine_id'].tolist()
