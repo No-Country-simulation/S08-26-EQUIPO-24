@@ -2,7 +2,7 @@
 
 **Código:** S08-26-EQUIPO-24
 
-**Estado:** En desarrollo — Fase: Discovery / Project Setup
+**Estado:** ⚙️ En Proceso ~85% — Modelo + Integración Core Completa, UI/UX en Mejora (Stitch)
 
 ---
 
@@ -107,14 +107,44 @@ Activos ✅
 
 ## Estado actual
 
-El repositorio se encuentra en **fase de preparación / discovery**.
+**Core MVP (~85%):** Modelo entrenado, serializado e integrado en dashboard Streamlit. Pipeline ML-Dashboard funcional end-to-end. UI/UX en mejora continua con Stitch.
 
 **Dataset seleccionado:** Microsoft Azure Predictive Maintenance (Azure PdM) ✅
 - Evaluación completada con matriz de 20 criterios ponderados.
 - Análisis automatizado en `notebooks/01_data_exploration.ipynb` (sección 10).
 - Documentación en `docs/dataset_selection.md` y `docs/decisions.md` (DEC-009).
 
-**Próximo:** Data Engineering (unir 5 tablas) → Feature Engineering temporal → Modelado.
+**Modelo Candidato (Random Forest):**
+- PR-AUC: 0.9919 | ROC-AUC: 0.9999 | Recall: 1.0 | Precision: 0.7447 (threshold=0.5) / 0.8001 (threshold=0.5591)
+- Threshold optimizado: 0.5591
+- 46 features (sensores + historial errores + mantenimiento + rolling windows 3h/6h/24h + deltas)
+- Serializado en `models/baseline_model.joblib` (2.50 MB, sklearn 1.7.2)
+
+**Split temporal (sin data leakage):**
+| Split | Filas | % | Periodo | Tasa positivos |
+|-------|-------|---|---------|----------------|
+| Train | 654,600 | 74.72% | 2015-01-01 → 2015-09-30 | 2.01% |
+| Test  | 131,400 | 15.00% | 2015-10-02 → 2015-11-25 | 1.68% |
+| Live  | 87,700  | 10.01% | 2015-11-25 → 2016-01-01 | 1.97% |
+
+- Gap de 24h entre train y test
+- Validación anti-leakage: 4 estrategias confirman PR-AUC > 0.99 (temporal, mensual, por máquina, aleatorio)
+
+**Dashboard (`dashboard/app.py`):** Pipeline de inferencia batch funcional:
+- **Carga de datos:** `live_demo.parquet` (87,700 filas, 100 máquinas) desde GitHub (`feat/modeling_integration/data/processed/`) con fallback a `data/processed/live_demo.parquet` local. Cache 1h (`@st.cache_data`).
+- **Carga de modelo:** `baseline_model.joblib` desde GitHub (`feat/modeling_integration/models/`) con fallback local. Cache 1h (`@st.cache_resource`).
+- **Selector de origen:** Sidebar con radio `GitHub` / `Local` + botón 🔄 Recargar (limpia caches y rerunea).
+- **Inferencia:** `model.predict_proba()` sobre 46 features → `failure_probability` → threshold 0.5591 → predicción binaria calibrada a prevalencia ~1.96%.
+- **Outputs:** `df_risk` (ranking riesgo/criticidad/prioridad), `df_telemetry` (series temporales), `df_errors` (histórico simulado).
+- **UI actual (en mejora con Stitch):** 3 tabs — Identificar (ranking + bar chart + alertas), Comprender (telemetría + errores + métricas dinámicas), Priorizar (cola intervención + recomendación). Sidebar muestra metadatos modelo (PR-AUC, threshold, features, fechas train/test).
+
+**Tests:** 7/7 passing (`tests/`)
+
+**En progreso (pendiente ~15%):**
+- UI/UX refinada con Stitch (tema, componentes, responsive)
+- Deploy a Streamlit Cloud / CI/CD rebuild automático
+- Streaming tiempo real / Monitoreo drift en producción
+- SHAP explainability (opcional)
 
 ## Roadmap de 4 semanas
 
@@ -195,14 +225,23 @@ streamlit run dashboard/app.py
 streamlit run dashboard/app.py
 ```
 
+### Estado actual del dashboard
+
+- **Datos:** `live_demo.parquet` (87,700 filas, 100 máquinas, 46 features + target) desde GitHub `feat/modeling_integration/data/processed/` con fallback local.
+- **Modelo:** `baseline_model.joblib` (Random Forest, 2.50 MB) desde GitHub `feat/modeling_integration/models/` con fallback local.
+- **Carga dual:** Sidebar con selector `GitHub` / `Local` + botón 🔄 Recargar (limpia `st.cache_data` y `st.cache_resource`, fuerza rerun).
+- **Prevalencia:** Lógica de riesgo/prioridad calibrada a `failure_next_24h` ~1.96% (1:49), evita sobrerrepresentación de fallas vía top-k por probabilidad.
+- **UI/UX:** Funcional con 3 tabs (Identificar/Comprender/Priorizar) + sidebar (metadatos modelo, filtros, metadatos máquina). **En mejora continua con Stitch** (tema dark premium, componentes, responsive, accesibilidad).
+- **Decisiones:** El responsable de mantenimiento ve ranking de riesgo, señales (telemetría + errores), prioridad y recomendación de intervención (Intervenir/Inspeccionar/Monitorear/Ninguna).
+
 ## Cómo contribuir
 
 Ver CONTRIBUTING.md.
 
 ## Limitaciones conocidas
 
-- Modelo en proceso
-- Dashboard v0.2 (componentes modulares, mock data, diseño en Stich, desarrollo en Streamlit).
+- El artefacto del modelo puede mostrar `InconsistentVersionWarning` si la versión de scikit-learn no coincide con la de entrenamiento (1.7.2 vs 1.9.1 actual); se recomienda regenerarlo en el entorno objetivo.
+- **UI/UX en mejora activa con Stitch:** Tema dark premium, componentes, responsive y accesibilidad en iteración. La funcionalidad core (carga dual, inferencia, prevalence calibrada) está completa.
 - FastAPI inicialmente no está incluido en el MVP.
 - Dataset AI4I 2020 solo para validación secundaria.
 
@@ -215,9 +254,17 @@ Los datos crudos van en data/raw/ y no se modifican.
 
 Crear variables derivadas es válido cuando existe justificación técnica o de negocio y el proceso es reproducible. No se deben inventar datos históricos.
 
-## Demo futura
+## Demo (En desarrollo)
 
-Cuando el MVP esté listo, se ejecutará dashboard/app.py para demostrar:
-1. Identificar máquinas con mayor riesgo.
-2. Comprender las señales del riesgo.
-3. Priorizar qué atender primero.
+El pipeline core (datos → modelo → inferencia → UI) está funcional. Ejecutar:
+
+```bash
+streamlit run dashboard/app.py
+```
+
+El dashboard permite al responsable de mantenimiento:
+1. **Identificar** máquinas con mayor riesgo (ranking interactivo + bar chart + alertas críticas).
+2. **Comprender** señales (telemetría temporal volt/rotate/pressure/vibration + histórico de errores + feature importance en `docs/model.md`).
+3. **Priorizar** intervención (cola ordenada por `priority_score` = riesgo × criticidad + recomendación principal).
+
+> **Nota:** La UI/UX está en proceso de refinamiento con Stitch. La funcionalidad core (carga GitHub/local, inferencia, prevalence calibrada) está completa pero en revisión.
