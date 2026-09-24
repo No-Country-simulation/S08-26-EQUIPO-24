@@ -93,7 +93,7 @@ data/raw/*.parquet
 data/raw/*.xlsx
 data/raw/*.json
 data/processed/*.csv
-data/processed/*.parquet
+#data/processed/*.parquet
 data/processed/*.xlsx
 data/processed/*.json
 *.db
@@ -103,7 +103,7 @@ data/processed/*.json
 
 # Models
 models/*.pkl
-models/*.joblib
+#models/*.joblib
 models/*.h5
 models/*.onnx
 models/*.pt
