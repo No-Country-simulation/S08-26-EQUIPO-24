@@ -15,7 +15,7 @@ import pandas as pd
 import streamlit as st
 from urllib.request import Request, urlopen
 
-from utils.model_loader import get_model, predict_probabilities, predict_binary
+from utils.model_loader import get_model, predict_probabilities
 
 # ── Configuración ─────────────────────────────────────────────────
 
@@ -46,7 +46,7 @@ def _load_from_local(path: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_live_demo_data(prefer_local: bool = False) -> pd.DataFrame:
+def load_live_demo_data(prefer_local: bool = False) -> tuple[pd.DataFrame, str]:
     """Carga live_demo.parquet desde GitHub con fallback local.
 
     Estrategia:
@@ -54,7 +54,7 @@ def load_live_demo_data(prefer_local: bool = False) -> pd.DataFrame:
     2. Si falla, usa la copia local `data/processed/live_demo.parquet`.
 
     Returns:
-        DataFrame con todas las features en el orden esperado por el modelo.
+        (DataFrame con las lecturas, descripción de la fuente utilizada).
     """
     if prefer_local:
         local = os.path.normpath(LOCAL_LIVE_PATH)
@@ -89,7 +89,7 @@ def load_live_demo_data(prefer_local: bool = False) -> pd.DataFrame:
         df = df.rename(columns={'machineID': 'machine_id'})
 
     # Verificaciones esenciales del schema esperado por el modelo
-    required_cols = {'datetime', 'failure_next_24h', 'machine_id'}
+    required_cols = {'datetime', 'machine_id'}
     missing = required_cols - set(df.columns)
     if missing:
         raise ValueError(
@@ -130,8 +130,8 @@ def _extract_machine_metadata(df: pd.DataFrame) -> pd.DataFrame:
     numeric_ids = pd.to_numeric(latest['machine_id'], errors='coerce').fillna(0).astype(int)
     machines_df = pd.DataFrame({
         'machine_id': latest['machine_id'].astype(str).tolist(),
-        'type': numeric_ids.map(type_map).tolist(),
-        'location': numeric_ids.map(location_map).tolist(),
+        'type': numeric_ids.map(type_map).fillna('Tipo no especificado').tolist(),
+        'location': numeric_ids.map(location_map).fillna('Ubicación no especificada').tolist(),
         'operating_hours': [8000 + (m * 150) % 2000 for m in numeric_ids.tolist()],
         'last_maintenance': [(pd.Timestamp('2026-01-01') - pd.Timedelta(days=float(hours) * 0.1)).strftime('%Y-%m-%d') 
                             for hours in latest['hours_since_maintenance']],
@@ -142,7 +142,7 @@ def _extract_machine_metadata(df: pd.DataFrame) -> pd.DataFrame:
     return machines_df
 
 
-def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = False) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = False) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Ejecuta inferencia del modelo sobre live_df y retorna df_risk + metadatos.
 
     Args:
@@ -155,7 +155,7 @@ def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = Fa
         df_errors: histórico de errores simulados para machine_detail.
     """
     # Cargar el modelo (cached por st.cache_data)
-    model, feature_cols, meta, model_source = get_model(prefer_local=prefer_local_model)
+    model, feature_cols, meta, _model_source = get_model(prefer_local=prefer_local_model)
     threshold = meta["decision_threshold"]
 
     # Asegurar nombres de columnas normales (por ejemplo live_df puede venir con 'machine_id')
@@ -170,49 +170,30 @@ def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = Fa
     # Predicción del modelo (probabilidades)
     probs = predict_probabilities(model, feature_cols, live_df)
 
-    # Calibrar la cantidad de positivos para que refleje la prevalencia realista
-    # Preferir la tasa incluida en el artefacto del modelo (train/test), si existe.
-    expected_rate = None
-    try:
-        expected_rate = float(meta.get('positive_rate_test') or meta.get('positive_rate_train') or 0.0196)
-    except Exception:
-        expected_rate = 0.0196
-
-    n_rows = len(live_df)
-    expected_positives = max(1, int(round(expected_rate * n_rows)))
-
-    # Construir predicciones binarias escogiendo las filas con mayor probabilidad
-    preds = pd.Series(0, index=live_df.index, name='prediction')
-    if expected_positives > 0 and not probs.empty:
-        top_idx = probs.sort_values(ascending=False).head(expected_positives).index
-        preds.loc[top_idx] = 1
-
     live_df = live_df.copy()
     live_df['failure_probability'] = probs
-    live_df['prediction'] = preds
+    live_df['prediction'] = (probs >= threshold).astype('int8')
 
     # ── df_machines: metadatos ──────────────────────────────────────
     df_machines = _extract_machine_metadata(live_df)
 
     # ── df_risk: ranking por máquina ───────────────────────────────
-    risk = (
-        live_df
-        .groupby('machine_id')
-        .agg({
-            'failure_probability': 'max',
-            'prediction': 'sum',
-            'hours_since_maintenance': 'min',
-            'errors_last_24h': 'max',
-            'time_since_last_error_h': 'min',
-        })
-        .rename(columns={
-            'failure_probability': 'risk_score',
-            'prediction': 'critical_count',
-            'hours_since_maintenance': 'hours_since_last_maintenance',
-            'errors_last_24h': 'recent_errors',
-        })
-        .reset_index()
+    # Cada fila es una lectura temporal: el ranking debe representar el estado
+    # más reciente, no el máximo de cientos de predicciones históricas.
+    latest = (
+        live_df.sort_values(['datetime', 'machine_id'])
+        .groupby('machine_id', sort=False)
+        .tail(1)
     )
+    risk = latest[[
+        'machine_id', 'failure_probability', 'prediction',
+        'hours_since_maintenance', 'errors_last_24h',
+        'time_since_last_error_h',
+    ]].rename(columns={
+        'failure_probability': 'risk_score',
+        'hours_since_maintenance': 'hours_since_last_maintenance',
+        'errors_last_24h': 'recent_errors',
+    }).copy()
 
     # Calcular risk_score normalizado (0-100)
     risk['risk_score'] = (risk['risk_score'] * 100).round(2)

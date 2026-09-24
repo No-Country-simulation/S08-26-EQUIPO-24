@@ -164,12 +164,15 @@ with st.sidebar:
     st.divider()
 
     # Info del modelo
-    st.markdown("""
+    pr_auc = meta.get("pr_auc")
+    pr_auc_text = f"{pr_auc:.4f}" if pr_auc is not None else "N/D"
+    threshold_text = f"{meta['decision_threshold']:.3f}"
+    st.markdown(f"""
     <div style='padding: 12px; border-radius: 8px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); margin-bottom: 16px;'>
         <div style='font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em;'>Modelo ML</div>
         <div style='font-weight: 600; color: #60a5fa; margin-top: 4px;'>Fuente: {model_source}</div>
-        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 4px;'>PR-AUC: {meta.get("pr_auc", 0):.4f}</div>
-        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Threshold: {meta.get("decision_threshold", 0):.3f}</div>
+        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 4px;'>PR-AUC: {pr_auc_text}</div>
+        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Threshold: {threshold_text}</div>
         <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Features: {len(feature_cols)}</div>
         <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Entrenamiento: {meta.get("train_start", "?")} → {meta.get("train_end", "?")}</div>
         <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Test: {meta.get("test_start", "?")} → {meta.get("test_end", "?")}</div>
@@ -345,9 +348,9 @@ with tab1:
         height=280,
         showlegend=False,
     )
-    # Línea de umbral crítico
-    fig.add_vline(x=75, line_dash='dash', line_color='#ff4b4b',
-                  annotation_text='Umbral crítico (75%)',
+    # La categoría Crítico empieza en 60% según get_level_and_criticality.
+    fig.add_vline(x=60, line_dash='dash', line_color='#ff4b4b',
+                  annotation_text='Umbral crítico (60%)',
                   annotation_font_color='#ff4b4b',
                   annotation_position='top right')
     st.plotly_chart(fig, use_container_width=True)

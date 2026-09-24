@@ -164,12 +164,27 @@ def predict_probabilities(model, feature_cols, df: pd.DataFrame) -> pd.Series:
         )
 
     X = df[feature_cols]
-    # Random Forest no requiere escalado (el scaler no está en el artefacto).
-    probs = model.predict_proba(X)[:, 1]
+    classes = list(getattr(model, "classes_", []))
+    if classes:
+        try:
+            positive_index = classes.index(1)
+        except ValueError as exc:
+            raise ValueError(
+                f"El modelo no contiene la clase positiva 1 (clases: {classes})."
+            ) from exc
+    else:
+        positive_index = 1
+
+    probabilities = model.predict_proba(X)
+    if probabilities.ndim != 2 or probabilities.shape[1] <= positive_index:
+        raise ValueError("El modelo devolvió probabilidades con forma inesperada.")
+    probs = probabilities[:, positive_index]
     return pd.Series(probs, index=df.index, name="failure_probability")
 
 
 def predict_binary(model, feature_cols, df: pd.DataFrame, threshold: float) -> pd.Series:
     """Predicción binaria usando el umbral de decisión del modelo."""
+    if not 0 <= threshold <= 1:
+        raise ValueError(f"El umbral debe estar entre 0 y 1; recibido: {threshold}.")
     probs = predict_probabilities(model, feature_cols, df)
     return (probs >= threshold).astype(int)

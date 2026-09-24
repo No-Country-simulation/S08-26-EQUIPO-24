@@ -43,16 +43,17 @@ Nota sobre reinicio programático
 - En algunas versiones recientes de Streamlit la función `st.experimental_rerun()` puede no estar disponible. El dashboard incluye un helper `safe_rerun()` que intenta reiniciar de forma compatible, pero si tu versión no lo permite verás una advertencia y deberás refrescar la página manualmente.
 - Recomendación: Mantén Streamlit actualizado en tu entorno y, si necesitas comportamiento determinista de reinicio programático durante el desarrollo, prueba con una versión estable que soporte `experimental_rerun` o usa el botón de recarga seguido de un refresh manual del navegador.
 
-Notas de prevalencia y coherencia de fallas
-- Según el análisis de calidad de datos del proyecto, la tasa de positivos para `failure_next_24h` en el dataset maestro es aproximadamente **1.96%** (≈1:49). Para mantener una demo coherente con los datos históricos, el pipeline de inferencia en el dashboard selecciona los *top-k* eventos por probabilidad para marcar positivos de forma controlada (esto evita sobrerrepresentación de fallas en la UI).
+Comportamiento de la inferencia
+- Cada predicción representa la probabilidad de `failure_next_24h` para una lectura. El ranking por máquina usa su lectura más reciente, en vez de tomar el máximo de todo el historial.
+- La etiqueta binaria respeta `decision_threshold` del artefacto del modelo. No se altera la cantidad de positivos para forzar que coincida con la prevalencia del dataset de entrenamiento.
 
 Advertencia de versión de scikit-learn
 - Al cargar el artefacto serializado (`baseline_model.joblib`) puede aparecer la advertencia `InconsistentVersionWarning` si la versión local de scikit-learn no coincide con la usada en entrenamiento. Recomendamos regenerar el artefacto en el entorno objetivo o alinear la versión de scikit-learn si buscas reproducibilidad exacta.
 
 Commit/PR sugeridos
-- Mensaje de commit (breve): `fix(dashboard): normaliza labels de riesgo, calibra prevalencia y optimiza telemetría`
-- Título PR: `Mejora: Integración de modelo y coherencia de prevalencia en dashboard`
-- Descripción PR corta: `Normaliza etiquetas de riesgo a Crítico/Moderado/Estable, calibra la proporción de positivos (~1.96%) para la demo, optimiza renderizado de telemetría y añade test de prevalencia. Documentación incluida.`
+- Mensaje de commit (breve): `fix(dashboard): rankea máquinas por la última predicción del modelo`
+- Título PR: `Corrección de la integración del modelo con el dashboard`
+- Descripción PR corta: `Usa la última lectura de cada máquina para el ranking, aplica el umbral guardado en el artefacto y valida que la clase positiva se seleccione por etiqueta. Documentación incluida.`
 
 Contacto
 - Equipo S08-26-EQUIPO-24
