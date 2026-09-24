@@ -23,7 +23,7 @@ from urllib.request import Request, urlopen
 # ── Configuración ──────────────────────────────────────────────
 MODEL_URL = (
     "https://raw.githubusercontent.com/No-Country-simulation/"
-    "S08-26-EQUIPO-24/feat/modeling_integration/models/"
+    "S08-26-EQUIPO-24/main/models/"
     "baseline_model.joblib"
 )
 

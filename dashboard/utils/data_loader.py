@@ -21,7 +21,7 @@ from utils.model_loader import get_model, predict_probabilities
 
 LIVE_DEMO_URL = (
     "https://raw.githubusercontent.com/No-Country-simulation/"
-    "S08-26-EQUIPO-24/feat/modeling_integration/data/processed/"
+    "S08-26-EQUIPO-24/main/data/processed/"
     "live_demo.parquet"
 )
 
