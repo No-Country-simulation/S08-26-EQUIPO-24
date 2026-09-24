@@ -21,7 +21,7 @@ from utils.model_loader import get_model, predict_probabilities
 
 LIVE_DEMO_URL = (
     "https://raw.githubusercontent.com/No-Country-simulation/"
-    "S08-26-EQUIPO-24/feat/modeling_integration/data/processed/"
+    "S08-26-EQUIPO-24/main/data/processed/"
     "live_demo.parquet"
 )
 
@@ -69,7 +69,7 @@ def load_live_demo_data(prefer_local: bool = False) -> tuple[pd.DataFrame, str]:
     else:
         try:
             df = _load_from_url(LIVE_DEMO_URL)
-            source = "GitHub (feat/modeling_integration)"
+            source = "GitHub (main)"
         except Exception:
             local = os.path.normpath(LOCAL_LIVE_PATH)
             if os.path.exists(local):

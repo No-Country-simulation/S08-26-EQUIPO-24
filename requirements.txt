@@ -1,9 +1,10 @@
 # Core data stack
 pandas>=2.0.0
+pyarrow>=14.0.0  # lectura de archivos .parquet
 numpy>=1.24.0
 
 # Machine learning
-scikit-learn>=1.3.0
+scikit-learn==1.7.2  # debe coincidir con la versión de entrenamiento del modelo
 joblib>=1.3.0
 
 # Visualization

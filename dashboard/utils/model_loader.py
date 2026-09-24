@@ -1,7 +1,7 @@
 """Carga del modelo ML serializado (joblib) desde GitHub.
 
 El archivo `models/baseline_model.joblib` se aloja en la rama
-`feat/modeling_integration` del repositorio y contiene:
+`main` del repositorio y contiene:
 
 - model: RandomForestClassifier entrenado.
 - feature_cols: lista de 46 features en el orden esperado.
@@ -23,7 +23,7 @@ from urllib.request import Request, urlopen
 # ── Configuración ──────────────────────────────────────────────
 MODEL_URL = (
     "https://raw.githubusercontent.com/No-Country-simulation/"
-    "S08-26-EQUIPO-24/feat/modeling_integration/models/"
+    "S08-26-EQUIPO-24/main/models/"
     "baseline_model.joblib"
 )
 
@@ -72,7 +72,7 @@ def load_model_artifact(prefer_local: bool = False):
     else:
         try:
             artifact = _load_from_url(MODEL_URL)
-            source = "GitHub (feat/modeling_integration)"
+            source = "GitHub (main)"
         except Exception:
             # Fallback a archivo local si existe.
             local = os.path.normpath(LOCAL_MODEL_PATH)
