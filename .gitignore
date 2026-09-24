@@ -103,7 +103,7 @@ data/processed/features_dataset.parquet
 
 # Models
 models/*.pkl
-models/*.joblib
+#models/*.joblib
 models/*.h5
 models/*.onnx
 models/*.pt
