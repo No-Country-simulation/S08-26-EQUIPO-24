@@ -47,7 +47,7 @@ def render_risk_table(df_risk, selected_status, selected_criticality):
 
     st.dataframe(
         df_styled,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             'Máquina': st.column_config.TextColumn('Máquina', width='medium'),

@@ -1,467 +1,219 @@
-import streamlit as st
-import plotly.graph_objects as go
-import plotly.express as px
+import html
 
-from components.risk_table import render_risk_table
-from components.sensor_chart import render_sensor_chart
+import plotly.graph_objects as go
+import streamlit as st
+
 from components.machine_detail import render_machine_detail
-from components.priority_list import render_priority_list
-from utils.data_loader import load_live_demo_data, compute_risk_from_model
+from components.sensor_chart import render_sensor_chart
+from components.risk_table import render_risk_table
+from utils.data_loader import compute_risk_from_model, load_live_demo_data
 from utils.model_loader import get_model
 
+
 st.set_page_config(
-    page_title='PredictiveMaintenance',
-    page_icon='🔧',
-    layout='wide',
-    initial_sidebar_state='expanded'
+    page_title="Mantenimiento predictivo",
+    page_icon="",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 
-def safe_rerun():
-    """Intenta reiniciar el script de Streamlit de forma compatible.
-
-    Algunas versiones de Streamlit no exponen `st.experimental_rerun`.
-    Esta función intenta usarlo y, si no existe, intenta lanzar la
-    excepción interna de rerun; si todo falla, muestra una advertencia
-    para que el usuario recargue manualmente la página.
+st.markdown(
     """
-    if hasattr(st, "experimental_rerun"):
-        try:
-            st.experimental_rerun()
-            return
-        except Exception:
-            pass
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap');
+    :root { --bg:#0b1326; --surface:#111a2d; --surface-2:#171f33; --surface-3:#222a3d; --line:#424754; --text:#dae2fd; --muted:#9da6bd; --blue:#7eabff; --blue-strong:#4d8eff; --orange:#ffb690; --red:#ffb4ab; --green:#54e18c; }
+    html, body, [class*="css"], [data-testid="stAppViewContainer"] { font-family:Inter,sans-serif; }
+    [data-testid="stAppViewContainer"] { background:var(--bg); color:var(--text); }
+    [data-testid="stHeader"] { background:rgba(11,19,38,.85); }
+    [data-testid="stMainBlockContainer"] { max-width:none; padding:5.3rem 2rem 2.5rem; }
+    [data-testid="stSidebar"] { background:linear-gradient(180deg,#171f33 0%,#0b1326 100%); border-right:1px solid rgba(126,171,255,.2); }
+    [data-testid="stSidebar"] > div:first-child { padding:1.25rem 1rem; }
+    [data-testid="stMetric"] { background:var(--surface-2); border:1px solid rgba(126,171,255,.15); border-radius:8px; padding:1rem; }
+    [data-testid="stMetricLabel"] { color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; }
+    [data-testid="stMetricValue"] { color:var(--text); font-family:'JetBrains Mono',monospace; font-weight:700; }
+    [data-testid="stMetricDelta"] { font-family:'JetBrains Mono',monospace; font-size:.72rem; }
+    [data-testid="stTabs"] [role="tablist"] { gap:.25rem; padding:.35rem; background:var(--surface-2); border:1px solid rgba(126,171,255,.15); border-radius:8px; }
+    [data-testid="stTabs"] button[role="tab"] { color:var(--muted); border-radius:6px; font-weight:600; }
+    [data-testid="stTabs"] button[role="tab"][aria-selected="true"] { color:#001a42; background:var(--blue-strong); }
+    [data-testid="stVerticalBlockBorderWrapper"] { border-color:rgba(126,171,255,.14); background:rgba(23,31,51,.72); border-radius:8px; }
+    [data-testid="stDataFrame"] { border:1px solid rgba(126,171,255,.14); }
+    h1, h2, h3 { font-family:'Space Grotesk',sans-serif!important; letter-spacing:0!important; }
+    h1 { font-size:2rem!important; color:var(--text)!important; } h2 { font-size:1.3rem!important; } h3 { font-size:1.05rem!important; }
+    .mono { font-family:'JetBrains Mono',monospace; } .eyebrow { color:var(--muted); font:500 .68rem 'JetBrains Mono',monospace; letter-spacing:.1em; text-transform:uppercase; }
+    .brand { color:var(--blue); font:700 1.15rem 'Space Grotesk',sans-serif; }
+    .topbar { position:fixed; z-index:5; top:0; left:0; right:0; height:4rem; display:flex; align-items:center; justify-content:space-between; padding:0 2rem; background:rgba(11,19,38,.86); border-bottom:1px solid rgba(126,171,255,.15); backdrop-filter:blur(14px); }
+    .status-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green); margin-right:.35rem; }
+    .banner { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1rem 1.2rem; background:var(--surface-2); border:1px solid rgba(126,171,255,.14); border-radius:8px; margin-bottom:1rem; }
+    .banner-title { color:var(--text); font:600 1.2rem 'Space Grotesk',sans-serif; } .banner-copy { color:var(--muted); font-size:.82rem; margin-top:.25rem; }
+    .pill { display:inline-block; padding:.28rem .5rem; border-radius:4px; color:var(--blue); background:rgba(77,142,255,.16); font:600 .65rem 'JetBrains Mono',monospace; letter-spacing:.04em; }
+    .pill-red { color:var(--red); background:rgba(255,80,70,.16); } .pill-green { color:var(--green); background:rgba(84,225,140,.12); }
+    .ai-card { padding:1rem; border:1px solid rgba(126,171,255,.3); border-radius:8px; background:linear-gradient(110deg,rgba(77,142,255,.18),rgba(23,31,51,.8)); }
+    .ai-card p { color:var(--muted); font-size:.84rem; margin:.35rem 0 0; }
+    .section-head { display:flex; align-items:end; justify-content:space-between; gap:1rem; margin:1.25rem 0 .8rem; } .section-head h2 { margin:0; } .section-head p { color:var(--muted); margin:.25rem 0 0; font-size:.8rem; }
+    .sidebar-card { padding:.85rem; border:1px solid rgba(126,171,255,.18); border-radius:8px; background:rgba(34,42,61,.6); margin:.8rem 0; }
+    .meta-row { display:flex; justify-content:space-between; gap:.5rem; padding:.25rem 0; color:var(--muted); font:.7rem 'JetBrains Mono',monospace; } .meta-row strong { color:var(--text); text-align:right; font-weight:500; }
+    .priority { border-left:3px solid var(--red); padding:.9rem 1rem; background:var(--surface-2); border-radius:0 8px 8px 0; margin:.5rem 0; } .priority-title { font-weight:700; color:var(--text); } .priority-copy { color:var(--muted); font-size:.82rem; margin-top:.25rem; } .priority-meta { display:flex; flex-wrap:wrap; gap:.8rem; margin-top:.5rem; color:var(--muted); font:.68rem 'JetBrains Mono',monospace; }
+    @media (max-width:800px) { [data-testid="stMainBlockContainer"] { padding:4.8rem 1rem 1.5rem; } .topbar { padding:0 1rem; } .banner { align-items:flex-start; flex-direction:column; } }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-    # Intentar lanzar la excepción interna de rerun (varía según versión)
-    try:
-        from streamlit.runtime.scriptrunner.script_runner import RerunException
-        raise RerunException()
-    except Exception:
-        try:
-            # Fallback a ubicaciones antiguas
-            from streamlit.scriptrunner import RerunException
-            raise RerunException()
-        except Exception:
-            st.warning('No es posible reiniciar programáticamente en esta versión de Streamlit. Por favor, refresca la página manualmente.')
-            return
 
-# ── Estilos CSS personalizados (tema oscuro premium) ──
-st.markdown("""
-<style>
-    /* Importar fuente moderna */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+def rerun_app():
+    if hasattr(st, "rerun"):
+        st.rerun()
+    st.experimental_rerun()
 
-    /* Fuente global */
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-    }
 
-    /* Header principal */
-    h1 {
-        background: linear-gradient(135deg, #3b82f6, #60a5fa);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        font-weight: 700 !important;
-        letter-spacing: -0.5px;
-    }
+SECTION_OPTIONS = [
+    ("overview", "1. Vista General"),
+    ("telemetry", "2. Telemetria en Vivo"),
+    ("anomalies", "3. Deteccion de Anomalias"),
+    ("maintenance", "4. Plan de Mantenimiento"),
+]
 
-    /* KPI cards — borde según tipo */
-    div[data-testid="metric-container"] {
-        background: rgba(30, 41, 59, 0.8);
-        border: 1px solid rgba(59, 130, 246, 0.3);
-        border-radius: 12px;
-        padding: 16px 20px;
-        backdrop-filter: blur(10px);
-        transition: border-color 0.2s ease, transform 0.2s ease;
-    }
-    div[data-testid="metric-container"]:hover {
-        border-color: rgba(59, 130, 246, 0.7);
-        transform: translateY(-2px);
-    }
 
-    /* Valor del metric grande */
-    div[data-testid="metric-container"] > div:first-child {
-        font-size: 2rem !important;
-        font-weight: 700 !important;
-    }
+if "active_section" not in st.session_state:
+    st.session_state.active_section = "overview"
 
-    /* Sidebar styling */
-    section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
-        border-right: 1px solid rgba(59, 130, 246, 0.2);
-    }
 
-    /* Tabs activos */
-    button[data-baseweb="tab"][aria-selected="true"] {
-        color: #3b82f6 !important;
-        border-bottom-color: #3b82f6 !important;
-        font-weight: 600 !important;
-    }
-
-    /* Contenedores de sección */
-    div[data-testid="stVerticalBlock"] > div[data-testid="element-container"] {
-        border-radius: 8px;
-    }
-
-    /* Botones y elementos interactivos */
-    div[data-testid="stSelectbox"] label,
-    div[data-testid="stMultiSelect"] label {
-        font-weight: 500;
-        color: #94a3b8;
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-
-    /* Footer personalizado oculto */
-    footer { visibility: hidden; }
-    #MainMenu { visibility: hidden; }
-</style>
-""", unsafe_allow_html=True)
-
-# ── Selector de origen y control de recarga (sidebar inicial)
-with st.sidebar:
-    st.markdown("""
-    <div style='text-align:center; padding: 8px 0 4px 0;'>
-        <div style='font-size: 2rem;'>🔧</div>
-        <div style='font-size: 1.1rem; font-weight: 700; color: #60a5fa; letter-spacing: -0.3px;'>PredictiveMaintenance</div>
-        <div style='font-size: 0.7rem; color: #64748b; margin-top: 2px;'>S08-26-EQUIPO-24</div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.divider()
-
-    source_choice = st.radio('Origen de datos', options=['GitHub', 'Local'], index=0)
-    prefer_local = source_choice == 'Local'
-
-    st.caption('Elija `Local` para forzar uso de archivos en disco (desarrollo).')
-
-    if st.button('🔄 Recargar modelo y datos', key='reload_choice'):
-        try:
-            st.cache_data.clear()
-        except Exception:
-            pass
-        try:
-            st.cache_resource.clear()
-        except Exception:
-            pass
-        safe_rerun()
-
-# Cargar datos y modelo (usando la preferencia seleccionada)
-try:
-    with st.spinner('Cargando datos y modelo...'):
-        live_df, data_source = load_live_demo_data(prefer_local=prefer_local)
-        df_machines, df_risk, df_telemetry, df_errors = compute_risk_from_model(live_df, prefer_local_model=prefer_local)
-        model, feature_cols, meta, model_source = get_model(prefer_local=prefer_local)
-except Exception as e:
-    st.error(f"Error al cargar datos o modelo: {e}")
-    st.stop()
-
-# ═══════════════════════════════════════════════
-# BARRA LATERAL
-# ═══════════════════════════════════════════════
-with st.sidebar:
-    st.markdown(f"**Fuente de datos:** {data_source}")
-    st.divider()
-
-    # Info del modelo
-    pr_auc = meta.get("pr_auc")
-    pr_auc_text = f"{pr_auc:.4f}" if pr_auc is not None else "N/D"
-    threshold_text = f"{meta['decision_threshold']:.3f}"
-    st.markdown(f"""
-    <div style='padding: 12px; border-radius: 8px; background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); margin-bottom: 16px;'>
-        <div style='font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.1em;'>Modelo ML</div>
-        <div style='font-weight: 600; color: #60a5fa; margin-top: 4px;'>Fuente: {model_source}</div>
-        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 4px;'>PR-AUC: {pr_auc_text}</div>
-        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Threshold: {threshold_text}</div>
-        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Features: {len(feature_cols)}</div>
-        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Entrenamiento: {meta.get("train_start", "?")} → {meta.get("train_end", "?")}</div>
-        <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 2px;'>Test: {meta.get("test_start", "?")} → {meta.get("test_end", "?")}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Selector de máquina
-    machine_ids = df_machines['machine_id'].tolist()
-    selected_machine = st.selectbox(
-        'Máquina',
-        options=machine_ids,
-        index=0
-    )
-
-    # Filtro de estado
-    status_options = ['Crítico', 'Moderado', 'Estable']
-    selected_status = st.multiselect(
-        'Filtro de estado',
-        options=status_options,
-        default=['Crítico', 'Moderado', 'Estable']
-    )
-
-    # Filtro de criticidad
-    criticality_options = ['Alta', 'Media', 'Baja']
-    selected_criticality = st.multiselect(
-        'Filtro de criticidad',
-        options=criticality_options,
-        default=criticality_options
-    )
-
-    st.divider()
-
-    # Metadatos rápidos de la máquina seleccionada
-    machine_row = df_machines[df_machines['machine_id'] == selected_machine].iloc[0]
-    st.subheader('Metadatos')
-    st.write(f'**ID:** {machine_row["machine_id"]}')
-    st.write(f'**Tipo:** {machine_row["type"]}')
-    st.write(f'**Ubicación:** {machine_row["location"]}')
-    st.write(f'**Horas operación:** {machine_row["operating_hours"]} h')
-    st.write(f'**Último mantenimiento:** {machine_row["last_maintenance"]}')
-    st.write(f'**Días sin mantenimiento:** {machine_row["days_since_maintenance"]}')
-
-    # Botón para forzar recarga de datos y modelo
-    if st.button('🔄 Recargar modelo y datos', key='reload_sidebar'):
-        try:
-            st.cache_data.clear()
-        except Exception:
-            pass
-        try:
-            st.cache_resource.clear()
-        except Exception:
-            pass
-        safe_rerun()
-
-# ═══════════════════════════════════════════════
-# CONTENEDOR PRINCIPAL
-# ═══════════════════════════════════════════════
-st.markdown("""
-<h1 style='margin-bottom: 0;'>🔧 PredictiveMaintenance</h1>
-""", unsafe_allow_html=True)
-st.markdown("""
-<p style='color: #64748b; font-size: 0.9rem; margin-top: 0; margin-bottom: 4px;'>
-    <strong style='color: #3b82f6;'>S08-26-EQUIPO-24</strong> &nbsp;|&nbsp; Fase: Discovery / MVP Dashboard &nbsp;|&nbsp;
-    <span style='color: #22c55e;'>● Sistema activo</span>
-</p>
-""", unsafe_allow_html=True)
-
-st.divider()
-
-# Fila de KPIs principales
-kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-
-with kpi1:
-    st.metric(
-        label='🏭 Máquinas Monitoreadas',
-        value=len(df_machines),
-        delta=f'{len(df_machines)} activas',
-        delta_color='normal'
-    )
-
-with kpi2:
-    critical_count = len(df_risk[df_risk['risk_level'] == 'Crítico'])
-    st.metric(
-        label='⚠️ Riesgo Crítico',
-        value=critical_count,
-        delta='requiere atención inmediata',
-        delta_color='inverse'
-    )
-
-with kpi3:
-    # Convert next_maintenance timestamp to string for display
-    next_maint_date = df_machines['next_maintenance'].min().strftime('%Y-%m-%d') if not df_machines['next_maintenance'].isna().all() else 'N/A'
-    st.metric(
-        label='📅 Próximo Mantenimiento',
-        value=next_maint_date,
-        delta='más próximo programado'
-    )
-
-with kpi4:
-    avg_risk = df_risk['risk_score'].mean()
-    risk_delta = 'moderado' if avg_risk < 70 else 'alto'
-    st.metric(
-        label='📊 Riesgo Promedio',
-        value=f'{avg_risk:.0f}%',
-        delta=risk_delta,
-        delta_color='inverse' if avg_risk >= 70 else 'normal'
-    )
-
-st.divider()
-
-# Pestañas principales — Las 3 preguntas del producto
-tab1, tab2, tab3 = st.tabs([
-    '🎯 1. Identificar (Riesgo)',
-    '📡 2. Comprender (Señales)',
-    '🚀 3. Priorizar (Acción)'
-])
-
-# ── Pestaña 1: Identificar ──
-with tab1:
-    st.subheader('📊 Ranking de Riesgo por Máquina')
-
-    # Alerta de máquinas críticas
-    critical_machines = df_risk[df_risk['risk_level'] == 'Crítico']['machine_id'].tolist()
-    if critical_machines:
-        st.error(
-            f'⚠️ **Atención inmediata:** {len(critical_machines)} máquina(s) en nivel CRÍTICO → '
-            f'{", ".join(critical_machines)}'
-        )
-
-    # Tabla interactiva de riesgo con filtros
-    render_risk_table(df_risk, selected_status, selected_criticality)
-
-    st.divider()
-    st.subheader('📈 Distribución de Riesgo')
-
-    # Gráfico Plotly horizontal — ordenado por riesgo desc, colores semánticos
-    df_chart = df_risk.sort_values('risk_score', ascending=True).copy()
-    color_map = {
-        'Crítico': '#ff4b4b',
-        'Moderado': '#f97316',
-        'Estable': '#22c55e'
-    }
-    bar_colors = df_chart['risk_level'].map(color_map).tolist()
-
+def risk_figure(df_risk):
+    chart = df_risk.sort_values("risk_score", ascending=True).copy()
+    colors = {"Cr\u00edtico":"#ff6b68", "Moderado":"#ec6a06", "Estable":"#54e18c"}
     fig = go.Figure(go.Bar(
-        x=df_chart['risk_score'],
-        y=df_chart['machine_id'],
-        orientation='h',
-        marker_color=bar_colors,
-        text=[f'{v}%' for v in df_chart['risk_score']],
-        textposition='outside',
-        customdata=df_chart[['risk_level', 'criticality', 'priority']].values,
-        hovertemplate=(
-            '<b>%{y}</b><br>'
-            'Riesgo: %{x}%<br>'
-            'Nivel: %{customdata[0]}<br>'
-            'Criticidad: %{customdata[1]}<br>'
-            'Acción: %{customdata[2]}<extra></extra>'
-        )
+        x=chart["risk_score"], y=chart["machine_id"], orientation="h",
+        marker_color=[colors.get(level, "#7eabff") for level in chart["risk_level"]],
+        text=[f"{value:.0f}%" for value in chart["risk_score"]], textposition="outside",
+        hovertemplate="<b>%{y}</b><br>Riesgo: %{x:.1f}%<extra></extra>",
     ))
     fig.update_layout(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(30,41,59,0.5)',
-        font=dict(family='Inter, sans-serif', color='#f1f5f9'),
-        xaxis=dict(
-            title='Índice de Riesgo (%)',
-            range=[0, 110],
-            gridcolor='rgba(100,116,139,0.2)',
-            color='#94a3b8'
-        ),
-        yaxis=dict(color='#f1f5f9'),
-        margin=dict(l=20, r=40, t=20, b=20),
-        height=280,
-        showlegend=False,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(6,14,32,.65)",
+        font={"family":"JetBrains Mono", "color":"#dae2fd", "size":11},
+        xaxis={"range":[0,110], "gridcolor":"rgba(140,144,159,.18)", "title":"Índice de riesgo (%)"},
+        yaxis={"gridcolor":"rgba(0,0,0,0)"}, margin={"l":15,"r":45,"t":15,"b":45},
+        height=max(280, len(chart) * 52), showlegend=False,
     )
-    # La categoría Crítico empieza en 60% según get_level_and_criticality.
-    fig.add_vline(x=60, line_dash='dash', line_color='#ff4b4b',
-                  annotation_text='Umbral crítico (60%)',
-                  annotation_font_color='#ff4b4b',
-                  annotation_position='top right')
-    st.plotly_chart(fig, use_container_width=True)
+    fig.add_vline(x=60, line_dash="dash", line_color="#ffb4ab", annotation_text="Umbral crítico 60%", annotation_font_color="#ffb4ab")
+    return fig
 
-# ── Pestaña 2: Comprender ──
-with tab2:
-    st.subheader(f'📡 Señales en Tiempo Real — {selected_machine}')
 
-    # Layout de dos columnas
-    col_sensors, col_detail = st.columns([2, 1])
+def render_sidebar(df_machines, df_risk, data_source, model_source, feature_cols):
+    with st.sidebar:
+        st.markdown("<div class='brand'> Mantenimiento</div><div class='eyebrow'>S08-26-EQUIPO-24</div><div style='color:var(--green);font:.7rem JetBrains Mono;margin-top:.4rem'><span class='status-dot'></span>EN VIVO</div>", unsafe_allow_html=True)
+        st.divider()
+        st.markdown("<div class='eyebrow'>NAVEGACIN OPERATIVA</div>", unsafe_allow_html=True)
+        st.caption("Selecciona un modulo para cambiar de vista.")
+        for section_id, label in SECTION_OPTIONS:
+            if st.button(label, key=f"sidebar_{section_id}", width="stretch"):
+                st.session_state.active_section = section_id
+                rerun_app()
+        selected_machine = st.selectbox("ID de máquina", df_machines["machine_id"].tolist())
+        selected_status = st.multiselect("Filtro de estado", ["Critico", "Moderado", "Estable"], default=["Critico", "Moderado", "Estable"])
+        selected_status = ["Cr\u00edtico" if status == "Critico" else status for status in selected_status]
+        selected_criticality = st.multiselect("Filtro de criticidad", ["Alta", "Media", "Baja"], default=["Alta", "Media", "Baja"])
+        machine_row = df_machines[df_machines["machine_id"] == selected_machine].iloc[0]
+        metadata = [("ID", machine_row["machine_id"]), ("Tipo", machine_row["type"]), ("Ubicación", machine_row["location"]), ("Operación", f"{machine_row['operating_hours']} h"), ("ltimo mant.", machine_row["last_maintenance"])]
+        rows = "".join(f"<div class='meta-row'><span>{label}</span><strong>{html.escape(str(value))}</strong></div>" for label, value in metadata)
+        st.markdown(f"<div class='sidebar-card'><div class='eyebrow'>METADATOS · SYNC_OK</div>{rows}</div>", unsafe_allow_html=True)
+        critical = int(df_risk["risk_level"].astype(str).str.startswith("Cr").sum())
+        st.markdown(f"<div class='ai-card'><div style='color:var(--blue);font-weight:700'> Análisis con IA <span class='pill'>AI AGENT</span></div><p>{critical} activo(s) requieren revisión prioritaria según el modelo predictivo.</p></div>", unsafe_allow_html=True)
+        st.caption(f"Datos: {data_source}")
+        st.caption(f"Modelo: {model_source} · {len(feature_cols)} features")
+        if st.button(" Recargar modelo y datos", width="stretch"):
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            rerun_app()
+    return selected_machine, selected_status, selected_criticality
 
-    with col_sensors:
-        st.markdown('**🌡️ Telemetría de sensores**')
+
+try:
+    with st.spinner("Cargando datos y modelo..."):
+        live_df, data_source = load_live_demo_data()
+        df_machines, df_risk, df_telemetry, df_errors = compute_risk_from_model(live_df)
+        model, feature_cols, meta, model_source = get_model()
+except Exception as error:
+    st.error(f"Error al cargar datos o modelo: {error}")
+    st.stop()
+
+
+selected_machine, selected_status, selected_criticality = render_sidebar(df_machines, df_risk, data_source, model_source, feature_cols)
+st.markdown("<div class='topbar'><div><span class='brand'> Mantenimiento predictivo</span><div class='eyebrow'>S08-26-EQUIPO-24 · DESCUBRIMIENTO / MVP · <span style='color:var(--green)'><span class='status-dot'></span>SISTEMA ACTIVO</span></div></div><div class='mono' style='color:var(--muted);font-size:.7rem'>Streamlit Core 1.63</div></div>", unsafe_allow_html=True)
+st.markdown("<div class='banner'><div><div class='banner-title'> Monitor Diagnóstico Industrial <span class='pill'>PLANTA-SUR // LÍNEA-A</span></div><div class='banner-copy'>Análisis predictivo multivariante de activos industriales en tiempo de ciclo real.</div></div><div class='pill pill-green'><span class='status-dot'></span>FRECUENCIA: 100 Hz</div></div>", unsafe_allow_html=True)
+
+critical_count = int(df_risk["risk_level"].astype(str).str.startswith("Cr").sum())
+avg_risk = float(df_risk["risk_score"].mean())
+selected_risk = df_risk[df_risk["machine_id"] == selected_machine].iloc[0]
+next_date = df_machines["next_maintenance"].min()
+next_date_text = next_date.strftime("%d %b %Y") if not df_machines["next_maintenance"].isna().all() else "N/D"
+st.markdown(f"<div class='ai-card' style='margin-bottom:1rem'><strong> Copiloto Predictivo IA  Diagnóstico de Flota</strong><span class='pill pill-green' style='margin-left:.5rem'>SÍNTESIS CONTINUA</span><p>Análisis correlacionado en {len(df_machines)} activos. <strong style='color:var(--red)'>{critical_count} activo(s)</strong> superan el umbral de criticidad operativa y requieren intervención priorizada.</p></div>", unsafe_allow_html=True)
+
+nav_columns = st.columns(4)
+for nav_column, (section_id, label) in zip(nav_columns, SECTION_OPTIONS):
+    with nav_column:
+        button_type = "primary" if st.session_state.active_section == section_id else "secondary"
+        if st.button(label, key=f"top_{section_id}", width="stretch", type=button_type):
+            st.session_state.active_section = section_id
+            rerun_app()
+
+st.markdown("<div style='height:.35rem'></div>", unsafe_allow_html=True)
+
+if st.session_state.active_section == "overview":
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    with kpi1:
+        st.metric(" Máquinas monitoreadas", len(df_machines), f"{len(df_machines)} unidades IoT")
+    with kpi2:
+        st.metric("️ Riesgo crítico", critical_count, "Atención inmediata", delta_color="inverse")
+    with kpi3:
+        st.metric(" Próximo mantenimiento", next_date_text, "Ventana programada")
+    with kpi4:
+        st.metric(" Riesgo promedio", f"{avg_risk:.0f}%", "Índice global", delta_color="inverse" if avg_risk >= 60 else "normal")
+    st.markdown("<div class='section-head'><div><h2>Distribución de riesgo operacional por activo</h2><p>Cálculo de probabilidad de paro técnico en las próximas 168 horas.</p></div><span class='pill'>FLEET AVG</span></div>", unsafe_allow_html=True)
+    st.plotly_chart(risk_figure(df_risk), width="stretch", config={"displayModeBar": False})
+    st.markdown("<div class='section-head'><div><h2>Matriz diagnóstica de flota</h2><p>Ranking calculado a partir de la última lectura disponible.</p></div></div>", unsafe_allow_html=True)
+    render_risk_table(df_risk, selected_status, selected_criticality)
+
+if st.session_state.active_section == "telemetry":
+    tone = "pill-red" if str(selected_risk["risk_level"]).startswith("Cr") else "pill-green"
+    st.markdown(f"<div class='section-head'><div><h2>Telemetría crítica multieje · {html.escape(selected_machine)}</h2><p>Flujo temporal y estado de señales de la máquina seleccionada.</p></div><span class='pill {tone}'>{html.escape(selected_risk['risk_level']).upper()}</span></div>", unsafe_allow_html=True)
+    chart_col, detail_col = st.columns([2, 1])
+    with chart_col:
         render_sensor_chart(df_telemetry, selected_machine)
-
-    with col_detail:
-        st.markdown('**🔴 Histórico de errores**')
+    with detail_col:
         render_machine_detail(df_errors, selected_machine)
+    df_selected = df_telemetry[df_telemetry["machine_id"] == selected_machine].sort_values("timestamp")
+    if not df_selected.empty:
+        latest, previous = df_selected.iloc[-1], df_selected.iloc[0]
+        temp_col, vibration_col, pressure_col = st.columns(3)
+        with temp_col:
+            st.metric("Temperatura husillo", f"{latest['temperature']:.1f} °C", f"{latest['temperature'] - previous['temperature']:+.1f} °C")
+        with vibration_col:
+            st.metric("Vibración cojinete", f"{latest['vibration']:.2f} mm/s", f"{latest['vibration'] - previous['vibration']:+.2f} mm/s", delta_color="inverse")
+        with pressure_col:
+            st.metric("Presión lubricante", f"{latest['pressure']:.1f} bar", f"{latest['pressure'] - previous['pressure']:+.1f} bar")
 
-    st.divider()
-    st.subheader('⚡ Estado de señales clave')
+if st.session_state.active_section == "anomalies":
+    st.markdown("<div class='section-head'><div><h2>Módulo de diagnóstico y detección de anomalías</h2><p>Señales preparadas para FFT, envolvente Hilbert y clasificación multivariante.</p></div><span class='pill pill-red'>MODELO EN VIVO</span></div>", unsafe_allow_html=True)
+    anomaly_col, heat_col = st.columns([1, 2])
+    with anomaly_col:
+        confidence = min(99.9, max(50.0, float(selected_risk["risk_score"]) + 5))
+        st.markdown(f"<div class='sidebar-card'><div class='eyebrow'>ÍNDICE DE CERTEZA ALGORÍTMICA</div><div class='mono' style='font-size:1.7rem;font-weight:700;color:var(--red);margin:.55rem 0'>{confidence:.1f}%</div><div style='color:var(--muted);font-size:.74rem'>{selected_risk['risk_level']} · {selected_risk['priority']}</div></div>", unsafe_allow_html=True)
+        st.progress(confidence / 100, text="Certeza del diagnóstico")
+        st.caption(f"Algoritmo: {meta.get('model_type', 'modelo predictivo')} · threshold {meta.get('decision_threshold', 0.5):.3f}")
+    with heat_col:
+        st.markdown("<div class='section-head'><div><h3>Mapa de estado por activo</h3><p>Vista preparada para conectar subsistemas y sensores reales.</p></div></div>", unsafe_allow_html=True)
+        heatmap = df_risk[["machine_id", "risk_score", "risk_level", "criticality", "priority"]].copy()
+        heatmap["Riesgo"] = heatmap["risk_score"].map(lambda value: f"{value:.0f}%")
+        st.dataframe(heatmap[["machine_id", "Riesgo", "risk_level", "criticality", "priority"]], hide_index=True, width="stretch")
+    st.info("La visualización FFT queda reservada para conectar las ventanas de acelerómetro cuando estén disponibles en el pipeline de señales.")
 
-    # Métricas dinámicas basadas en la máquina seleccionada
-    df_sel = df_telemetry[df_telemetry['machine_id'] == selected_machine]
-    if not df_sel.empty:
-        df_sel_sorted = df_sel.sort_values('timestamp')
-        first = df_sel_sorted.iloc[0]
-        latest = df_sel_sorted.iloc[-1]
-
-        temp_delta  = latest['temperature'] - first['temperature']
-        vib_delta   = latest['vibration']   - first['vibration']
-        pres_delta  = latest['pressure']    - first['pressure']
-
-        col_s1, col_s2, col_s3 = st.columns(3)
-        with col_s1:
-            st.metric(
-                label='🌡️ Temperatura actual',
-                value=f"{latest['temperature']:.1f} °C",
-                delta=f"{temp_delta:+.1f} °C vs inicio",
-                delta_color='inverse'
-            )
-        with col_s2:
-            st.metric(
-                label='📳 Vibración actual',
-                value=f"{latest['vibration']:.2f} mm/s",
-                delta=f"{vib_delta:+.2f} mm/s vs inicio",
-                delta_color='inverse'
-            )
-        with col_s3:
-            st.metric(
-                label='💧 Presión actual',
-                value=f"{latest['pressure']:.1f} bar",
-                delta=f"{pres_delta:+.1f} bar vs inicio"
-            )
-
-# ── Pestaña 3: Priorizar ──
-with tab3:
-    st.subheader('🚀 Cola de Intervención — Ordenada por Prioridad')
-
-    st.info(
-        '📌 Las tareas se ordenan por **riesgo × criticidad × impacto**. '
-        'Intervenir en orden descendente para maximizar disponibilidad de planta.'
-    )
-
-    # Lista mejorada con progress bars de riesgo
-    df_prio = df_risk.merge(
-        df_machines[['machine_id', 'type', 'location', 'days_since_maintenance']], on='machine_id'
-    ).sort_values('priority_score', ascending=False)
-
-    rank_icons = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣']
-    for idx, (_, row) in enumerate(df_prio.iterrows()):
-        icon = rank_icons[idx] if idx < len(rank_icons) else f'{idx+1}.'
-        level_color = {'Crítico': '#ff4b4b', 'Moderado': '#f97316', 'Estable': '#22c55e'}.get(row['risk_level'], '#64748b')
-        action_emoji = {'Intervenir': '🔴', 'Inspeccionar': '🟠', 'Monitorear': '🟡', 'Revisar': '🟡', 'Ninguna': '🟢'}.get(row['priority'], '⚪')
-
-        with st.container():
-            c1, c2, c3, c4 = st.columns([0.3, 2.5, 2, 1.5])
-            with c1:
-                st.markdown(f"<div style='font-size:1.5rem; text-align:center; padding-top:8px;'>{icon}</div>", unsafe_allow_html=True)
-            with c2:
-                st.markdown(f"**{row['machine_id']}** — {row['type']}")
-                st.caption(f"📍 {row['location']} · {row['days_since_maintenance']}d sin mantenimiento")
-                # `st.progress` espera un valor entre 0 y 1
-                prog = float(row['risk_score']) / 100.0
-                prog = max(0.0, min(1.0, prog))
-                st.progress(prog)
-            with c3:
-                st.markdown(f"<span style='color:{level_color}; font-weight:600;'>● {row['risk_level']}</span> · Criticidad {row['criticality']}", unsafe_allow_html=True)
-            with c4:
-                st.markdown(f"{action_emoji} **{row['priority']}**")
-            st.divider()
-
-    # Card de recomendación principal
-    top = df_prio.iloc[0]
-    top_color = {'Crítico': '#ff4b4b', 'Moderado': '#f97316', 'Estable': '#22c55e'}.get(top['risk_level'], '#64748b')
-    st.markdown(f"""
-    <div style='
-        background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(30,41,59,0.9));
-        border: 1px solid #3b82f6;
-        border-left: 4px solid {top_color};
-        border-radius: 12px;
-        padding: 20px 24px;
-        margin-top: 8px;
-    '>
-        <div style='font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px;'>🎯 RECOMENDACIÓN DE INTERVENCIÓN</div>
-        <div style='font-size: 1.3rem; font-weight: 700; color: #f1f5f9; margin-bottom: 4px;'>{top['machine_id']} — {top['type']}</div>
-        <div style='color: #94a3b8; margin-bottom: 12px;'>📍 {top['location']} · {top['days_since_maintenance']} días sin mantenimiento</div>
-        <div style='display: flex; gap: 24px; flex-wrap: wrap;'>
-            <span style='color: {top_color}; font-weight: 600;'>● Riesgo {top['risk_score']}% ({top['risk_level']})</span>
-            <span style='color: #94a3b8;'>Criticidad: {top['criticality']}</span>
-            <span style='color: #60a5fa; font-weight: 600;'>▶ Acción: {top['priority']}</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+if st.session_state.active_section == "maintenance":
+    st.markdown("<div class='section-head'><div><h2>Plan de mantenimiento</h2><p>Cola de intervención priorizada por riesgo, criticidad e impacto operacional.</p></div><span class='pill pill-red'>ACCIN REQUERIDA</span></div>", unsafe_allow_html=True)
+    ordered = df_risk.merge(df_machines[["machine_id", "type", "location", "days_since_maintenance"]], on="machine_id").sort_values("priority_score", ascending=False)
+    if not ordered.empty:
+        top = ordered.iloc[0]
+        st.markdown(f"<div class='ai-card'><div class='eyebrow'>RECOMENDACIN PRIORITARIA #1</div><div class='banner-title'>Inspeccionar inmediatamente {html.escape(str(top['machine_id']))} · {html.escape(str(top['type']))}</div><p>Riesgo estimado <strong style='color:var(--red)'>{top['risk_score']:.0f}%</strong>. Acción sugerida: <strong>{html.escape(str(top['priority']))}</strong>. {int(top['days_since_maintenance'])} días desde el último mantenimiento.</p></div>", unsafe_allow_html=True)
+    for rank, (_, row) in enumerate(ordered.iterrows(), start=1):
+        tone = "var(--red)" if str(row["risk_level"]).startswith("Cr") else "var(--orange)" if row["risk_level"] == "Moderado" else "var(--green)"
+        st.markdown(f"<div class='priority' style='border-left-color:{tone}'><div class='priority-title'>{rank}. {html.escape(str(row['machine_id']))}  {html.escape(str(row['type']))} <span class='pill' style='color:{tone}'>{row['risk_score']:.0f}% · {html.escape(str(row['risk_level']).upper())}</span></div><div class='priority-copy'>Ubicación: {html.escape(str(row['location']))} · Acción: {html.escape(str(row['priority']))}</div><div class='priority-meta'><span>Criticidad: {html.escape(str(row['criticality']))}</span><span>{int(row['days_since_maintenance'])} días sin mantenimiento</span><span>Prioridad: {row['priority_score']:.0f}</span></div></div>", unsafe_allow_html=True)

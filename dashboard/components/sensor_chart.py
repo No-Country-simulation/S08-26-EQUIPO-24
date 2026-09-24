@@ -34,7 +34,7 @@ def render_sensor_chart(df_telemetry, machine_id):
     # Gráfico de línea nativo de Streamlit
     st.line_chart(
         df_machine.set_index('timestamp')[sensor],
-        use_container_width=True,
+        width="stretch",
         color='#ff4b4b'
     )
 
