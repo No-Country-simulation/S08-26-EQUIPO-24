@@ -115,10 +115,10 @@ Activos ✅
 - Documentación en `docs/dataset_selection.md` y `docs/decisions.md` (DEC-009).
 
 **Modelo Candidato (Random Forest):**
-- PR-AUC: 0.9919 | ROC-AUC: 0.9999 | Recall: 1.0 | Precision: 0.7447 (threshold=0.5) / 0.8001 (threshold=0.5591)
-- Threshold optimizado: 0.5591
+- PR-AUC: 0.9932 | ROC-AUC: 0.9999 | Recall: 1.0 | Precision: 0.7634 (threshold=0.5385, values recorded in the current artifact)
+- Threshold stored in the current model artifact: 0.5385
 - 46 features (sensores + historial errores + mantenimiento + rolling windows 3h/6h/24h + deltas)
-- Serializado en `models/baseline_model.joblib` (2.50 MB, sklearn 1.7.2)
+- Serializado en `models/baseline_model.joblib` (version de scikit-learn registrada en el artefacto)
 
 **Split temporal (sin data leakage):**
 | Split | Filas | % | Periodo | Tasa positivos |
@@ -134,7 +134,7 @@ Activos ✅
 - **Carga de datos:** `live_demo.parquet` (87,700 filas, 100 máquinas) desde GitHub (`feat/modeling_integration/data/processed/`) con fallback a `data/processed/live_demo.parquet` local. Cache 1h (`@st.cache_data`).
 - **Carga de modelo:** `baseline_model.joblib` desde GitHub (`feat/modeling_integration/models/`) con fallback local. Cache 1h (`@st.cache_resource`).
 - **Selector de origen:** Sidebar con radio `GitHub` / `Local` + botón 🔄 Recargar (limpia caches y rerunea).
-- **Inferencia:** `model.predict_proba()` sobre 46 features → `failure_probability` → threshold 0.5591 → predicción binaria calibrada a prevalencia ~1.96%.
+- **Inferencia:** `model.predict_proba()` sobre las 46 features del artefacto; el umbral binario se lee del propio artefacto. El ranking usa la última lectura disponible de cada máquina.
 - **Outputs:** `df_risk` (ranking riesgo/criticidad/prioridad), `df_telemetry` (series temporales), `df_errors` (histórico simulado).
 - **UI actual (en mejora con Stitch):** 3 tabs — Identificar (ranking + bar chart + alertas), Comprender (telemetría + errores + métricas dinámicas), Priorizar (cola intervención + recomendación). Sidebar muestra metadatos modelo (PR-AUC, threshold, features, fechas train/test).
 
@@ -230,7 +230,7 @@ streamlit run dashboard/app.py
 - **Datos:** `live_demo.parquet` (87,700 filas, 100 máquinas, 46 features + target) desde GitHub `feat/modeling_integration/data/processed/` con fallback local.
 - **Modelo:** `baseline_model.joblib` (Random Forest, 2.50 MB) desde GitHub `feat/modeling_integration/models/` con fallback local.
 - **Carga dual:** Sidebar con selector `GitHub` / `Local` + botón 🔄 Recargar (limpia `st.cache_data` y `st.cache_resource`, fuerza rerun).
-- **Prevalencia:** Lógica de riesgo/prioridad calibrada a `failure_next_24h` ~1.96% (1:49), evita sobrerrepresentación de fallas vía top-k por probabilidad.
+- **Riesgo por máquina:** Se muestra la probabilidad de falla de la última lectura disponible. Las predicciones binarias respetan el umbral guardado en el artefacto; no se fuerza una cantidad fija de positivos.
 - **UI/UX:** Funcional con 3 tabs (Identificar/Comprender/Priorizar) + sidebar (metadatos modelo, filtros, metadatos máquina). **En mejora continua con Stitch** (tema dark premium, componentes, responsive, accesibilidad).
 - **Decisiones:** El responsable de mantenimiento ve ranking de riesgo, señales (telemetría + errores), prioridad y recomendación de intervención (Intervenir/Inspeccionar/Monitorear/Ninguna).
 
@@ -241,7 +241,7 @@ Ver CONTRIBUTING.md.
 ## Limitaciones conocidas
 
 - El artefacto del modelo puede mostrar `InconsistentVersionWarning` si la versión de scikit-learn no coincide con la de entrenamiento (1.7.2 vs 1.9.1 actual); se recomienda regenerarlo en el entorno objetivo.
-- **UI/UX en mejora activa con Stitch:** Tema dark premium, componentes, responsive y accesibilidad en iteración. La funcionalidad core (carga dual, inferencia, prevalence calibrada) está completa.
+- **UI/UX en mejora activa con Stitch:** Tema dark premium, componentes, responsive y accesibilidad en iteración. La funcionalidad core incluye carga dual, inferencia y ranking por lectura reciente.
 - FastAPI inicialmente no está incluido en el MVP.
 - Dataset AI4I 2020 solo para validación secundaria.
 
@@ -267,4 +267,4 @@ El dashboard permite al responsable de mantenimiento:
 2. **Comprender** señales (telemetría temporal volt/rotate/pressure/vibration + histórico de errores + feature importance en `docs/model.md`).
 3. **Priorizar** intervención (cola ordenada por `priority_score` = riesgo × criticidad + recomendación principal).
 
-> **Nota:** La UI/UX está en proceso de refinamiento con Stitch. La funcionalidad core (carga GitHub/local, inferencia, prevalence calibrada) está completa pero en revisión.
+> **Nota:** La UI/UX está en proceso de refinamiento con Stitch. La funcionalidad core (carga GitHub/local, inferencia por máquina y ranking de riesgo) está completa pero en revisión.
