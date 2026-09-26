@@ -41,6 +41,8 @@ st.markdown(
     [data-testid="stSidebar"] button[kind="primary"] { background:#4d8eff; color:#001a42; border-color:#4d8eff; font-weight:700; }
     [data-testid="stSidebar"] button[kind="secondary"] { background:transparent; color:#c2c6d6; border-color:transparent; text-align:left; }
     [data-testid="stSidebar"] button[kind="secondary"]:hover { background:#222a3d; color:#dae2fd; border-color:rgba(126,171,255,.2); }
+    [data-testid="stSidebar"] [data-testid="stButton"] button { min-height:2.55rem; border-radius:6px; }
+    [data-testid="stSidebar"] [data-testid="stSelectbox"], [data-testid="stSidebar"] [data-testid="stMultiSelect"] { margin-bottom:.35rem; }
     [data-testid="stDataFrame"] { border:1px solid rgba(126,171,255,.14); }
     h1, h2, h3 { font-family:'Space Grotesk',sans-serif!important; letter-spacing:0!important; }
     h1 { font-size:2rem!important; color:var(--text)!important; } h2 { font-size:1.3rem!important; } h3 { font-size:1.05rem!important; }
@@ -69,7 +71,11 @@ st.markdown(
     .anomaly-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:.45rem; }
     .heat-cell { display:flex; flex-direction:column; gap:.35rem; min-height:5.7rem; padding:.55rem; background:var(--surface-2); border:1px solid rgba(126,171,255,.1); border-radius:5px; color:var(--muted); font:500 .58rem 'JetBrains Mono',monospace; text-align:center; }
     .heat-cell span { padding:.25rem .15rem; border-radius:2px; background:rgba(84,225,140,.12); } .heat-cell span.red { background:rgba(255,180,171,.16); } .heat-cell span.orange { background:rgba(255,182,144,.16); } .heat-cell strong { font-size:.68rem; } .red { color:var(--red); } .orange { color:var(--orange); } .green { color:var(--green); }
-    .sidebar-card { padding:.85rem; border:1px solid rgba(126,171,255,.18); border-radius:8px; background:rgba(34,42,61,.6); margin:.8rem 0; }
+    .sidebar-card { padding:.85rem; border:1px solid rgba(126,171,255,.18); border-radius:8px; background:rgba(34,42,61,.6); margin:.65rem 0; }
+    .source-card { padding:.85rem; border:1px solid rgba(84,225,140,.24); border-left:3px solid var(--green); border-radius:6px; background:rgba(24,57,54,.32); margin:.8rem 0; }
+    .source-value { color:var(--text); font:600 .88rem 'Space Grotesk',sans-serif; margin:.35rem 0 .2rem; }
+    .source-note { color:var(--muted); font-size:.68rem; line-height:1.45; }
+    .sidebar-heading { margin:.95rem 0 .3rem; }
     .meta-row { display:flex; justify-content:space-between; gap:.5rem; padding:.25rem 0; color:var(--muted); font:.7rem 'JetBrains Mono',monospace; } .meta-row strong { color:var(--text); text-align:right; font-weight:500; }
     .priority { border-left:3px solid var(--red); padding:.9rem 1rem; background:var(--surface-2); border-radius:0 8px 8px 0; margin:.5rem 0; } .priority-title { display:flex; align-items:center; gap:.55rem; font-weight:700; color:var(--text); } .priority-copy { color:var(--muted); font-size:.82rem; margin-top:.25rem; } .priority-meta { display:flex; flex-wrap:wrap; gap:.8rem; margin-top:.5rem; color:var(--muted); font:.68rem 'JetBrains Mono',monospace; } .rank-badge { display:inline-grid; place-items:center; width:1.8rem; height:1.8rem; border-radius:5px; color:#061126; font:700 1rem 'JetBrains Mono',monospace; flex:none; }
     .maintenance-hero { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:1.15rem; border:1px solid rgba(126,171,255,.3); border-left:4px solid var(--red); border-radius:8px; background:linear-gradient(100deg,rgba(2,103,184,.55),rgba(23,31,51,.86)); }
@@ -197,28 +203,34 @@ def anomaly_heatmap_html(df_risk):
 
 def render_sidebar(df_machines, df_risk, data_source, model_source, feature_cols):
     with st.sidebar:
-        st.markdown("<div class='brand'>&#128295; Mantenimiento</div><div class='eyebrow'>S08-26-EQUIPO-24</div><div style='color:var(--green);font:.7rem JetBrains Mono;margin-top:.4rem'><span class='status-dot'></span>EN VIVO</div>", unsafe_allow_html=True)
+        st.markdown("<div class='brand'>&#128295; Mantenimiento</div><div class='eyebrow'>S08-26-EQUIPO-24</div><div style='color:var(--blue);font:.7rem JetBrains Mono;margin-top:.4rem'><span class='status-dot'></span>DEMO PREDICTIVA</div>", unsafe_allow_html=True)
+        is_remote_data = str(data_source).lower().startswith("github")
+        source_name = "GitHub" if is_remote_data else "Respaldo local"
+        source_detail = "live_demo.parquet · origen remoto" if is_remote_data else "live_demo.parquet · archivo local"
+        st.markdown(
+            f"<div class='source-card'><div class='eyebrow'>ORIGEN DE DATOS</div><div class='source-value'>Datos de prueba cargados desde: {html.escape(source_name)}</div><div class='source-note'>{html.escape(source_detail)}<br>Dataset de demostración; no transmite sensores en vivo.</div></div>",
+            unsafe_allow_html=True,
+        )
         st.divider()
-        st.markdown("<div class='eyebrow'>NAVEGACION OPERATIVA</div>", unsafe_allow_html=True)
-        st.caption("Selecciona un modulo para cambiar de vista.")
+        st.markdown("<div class='eyebrow sidebar-heading'>NAVEGACIÓN</div>", unsafe_allow_html=True)
         for section_id, label in SECTION_OPTIONS:
             sidebar_type = "primary" if st.session_state.active_section == section_id else "secondary"
             if st.button(label, key=f"sidebar_{section_id}", width="stretch", type=sidebar_type):
                 st.session_state.active_section = section_id
                 rerun_app()
+        st.markdown("<div class='eyebrow sidebar-heading'>FILTROS DE FLOTA</div>", unsafe_allow_html=True)
         selected_machine = st.selectbox("ID de máquina", df_machines["machine_id"].tolist())
-        selected_status = st.multiselect("Filtro de estado", ["Critico", "Moderado", "Estable"], default=["Critico", "Moderado", "Estable"])
-        selected_status = ["Cr\u00edtico" if status == "Critico" else status for status in selected_status]
+        selected_status = st.multiselect("Estado de riesgo", ["Crítico", "Moderado", "Estable"], default=["Crítico", "Moderado", "Estable"])
         selected_criticality = st.multiselect("Filtro de criticidad", ["Alta", "Media", "Baja"], default=["Alta", "Media", "Baja"])
         machine_row = df_machines[df_machines["machine_id"] == selected_machine].iloc[0]
         metadata = [("ID", machine_row["machine_id"]), ("Tipo", machine_row["type"]), ("Ubicacion", machine_row["location"]), ("Operacion", f"{machine_row['operating_hours']} h"), ("Ultimo mant.", machine_row["last_maintenance"])]
         rows = "".join(f"<div class='meta-row'><span>{label}</span><strong>{html.escape(str(value))}</strong></div>" for label, value in metadata)
-        st.markdown(f"<div class='sidebar-card'><div class='eyebrow'>METADATOS · SYNC_OK</div>{rows}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='sidebar-card'><div class='eyebrow'>ACTIVO SELECCIONADO</div>{rows}</div>", unsafe_allow_html=True)
         critical = int(df_risk["risk_level"].astype(str).str.startswith("Cr").sum())
         st.markdown(f"<div class='ai-card'><div style='color:var(--blue);font-weight:700'>&#10024; Análisis con IA <span class='pill'>AI AGENT</span></div><p>{critical} activo(s) requieren revisión prioritaria según el modelo predictivo.</p></div>", unsafe_allow_html=True)
-        st.caption(f"Datos: {data_source}")
-        st.caption(f"Modelo: {model_source} · {len(feature_cols)} features")
-        if st.button(" Recargar modelo y datos", width="stretch"):
+        model_origin = "GitHub" if str(model_source).lower().startswith("github") else "respaldo local"
+        st.caption(f"Modelo: {model_origin} · {len(feature_cols)} variables")
+        if st.button("Actualizar demo", icon=":material/refresh:", width="stretch"):
             st.cache_data.clear()
             st.cache_resource.clear()
             rerun_app()
