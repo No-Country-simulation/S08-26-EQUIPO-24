@@ -2,7 +2,7 @@
 
 **Código:** S08-26-EQUIPO-24
 
-**Estado:** ⚙️ En Proceso ~85% — Modelo + Integración Core Completa, UI/UX en Mejora (Stitch)
+**Estado:** ✅ Completado (100%) — Modelo ML Serializado + Dashboard Streamlit con Simulador de Telemetría, Alertas Animadas e Interfaz UI/UX
 
 ---
 
@@ -30,43 +30,40 @@ El sistema debe permitir que un responsable de mantenimiento, sin revisar manual
 
 ### MUST HAVE
 - Dataset seleccionado y justificado ✅ **Azure PdM**
-- Limpieza y tratamiento de datos
-- EDA
-- Modelo ML con baseline, predicción de riesgo y explicabilidad
-- Dashboard con resumen, ranking de riesgo, prioridad y detalle de máquina
-- Integración, pruebas y deploy
+- Limpieza y tratamiento de datos ✅
+- EDA ✅
+- Modelo ML con baseline, predicción de riesgo y explicabilidad ✅
+- Dashboard con resumen, ranking de riesgo, prioridad y detalle de máquina ✅
+- Integración, pruebas y deploy ✅
 
 ### SHOULD HAVE
-- SHAP o explicación avanzada
-- Filtros avanzados
-- Comparación de máquinas
-- Exportación
-- Recomendación preventiva específica
+- SHAP o explicación avanzada ✅ (Feature importance y señales en UI)
+- Filtros avanzados ✅ (Estado de riesgo, criticidad, selectores dinámicos)
+- Comparación de máquinas ✅ (Detalle por activo y matriz de riesgo)
+- Exportación ✅
+- Recomendación preventiva específica ✅ (Acciones y plazos de atención recomendados)
 
 ### COULD HAVE
-- RUL
-- Horas hasta falla
-- Alertas
-- API independiente
-- Base de datos
-- Autenticación
-- Docker
+- Alertas visuales dinámicas ✅ (Lámparas parpadeantes y tarjetas animadas según nivel de riesgo)
+- Simulador interactivo de telemetría ✅ (Pruebas de resistencia y alteración de sensores en vivo)
+- RUL / Horas hasta falla (Documentado en roadmap futuro)
+- API independiente (Documentado en arquitectura como decisión futura)
 
 ## Flujo de solución
 
-Dataset → Limpieza → Feature Engineering → Modelo ML → Artefacto → Streamlit → Dashboard → Decisión
+Dataset → Limpieza → Feature Engineering → Modelo ML → Artefacto (.joblib) → Streamlit → Dashboard + Simulador → Decisión
 
 ## Arquitectura inicial
 
-- Dataset en data/ (Azure PdM seleccionado)
-- Limpieza y feature engineering en src/
-- Modelo serializado en models/
-- Dashboard en dashboard/app.py (Streamlit)
+- Dataset en `data/` (Azure PdM seleccionado)
+- Limpieza y feature engineering en `src/` y `notebooks/`
+- Modelo serializado en `models/baseline_model.joblib`
+- Dashboard en `dashboard/app.py` (Streamlit + componentes modulares)
 - FastAPI: opcional, no es dependencia del MVP
 
 ## Stack tecnológico
 
-- Python
+- Python 3.11+
 - Pandas, NumPy
 - Scikit-learn
 - Joblib
@@ -75,16 +72,15 @@ Dataset → Limpieza → Feature Engineering → Modelo ML → Artefacto → Str
 - Jupyter / Google Colab
 - Git, GitHub
 - Deploy: Streamlit Community Cloud
-- Stitch 
 
 ## Roles del equipo
 Activos ✅
-### Data Scientists (inicialmente 3)
+### Data Scientists
 - Luis Fernando Tapia — Modelado, baseline, modelos, métricas
 - Oscar Arauz — Feature Engineering, transformaciones, variables temporales
 - Lennin Billey Temoche Gómez — Pipeline ML, validación, serialización, integración ✅
 
-### Data Analysts (inicialmente 4)
+### Data Analysts
 - Lorena Urrutia — Product & Business, historias de usuario, KPIs, criticidad ✅
 - Alexander Tovar Morcillo — Data Quality, profiling, nulos, outliers
 - Héctor García — EDA, visualización, tendencias ✅
@@ -96,29 +92,29 @@ Activos ✅
 ## Estructura del repositorio
 
 - **`data/`** — Datasets (raw y processed)
-- **`notebooks/`** — Exploración y análisis
+- **`notebooks/`** — Exploración, ingeniería de features y modelado
 - **`src/`** — Código de producción (data, features, models, utils)
-- **`models/`** — Artefactos del modelo
-- **`dashboard/`** — Aplicación Streamlit
-- **`tests/`** — Pruebas
-- **`docs/`** — Documentación del proyecto
+- **`models/`** — Artefactos del modelo (`baseline_model.joblib`)
+- **`dashboard/`** — Aplicación Streamlit (`app.py`, `components/`, `utils/`)
+- **`tests/`** — Pruebas unitarias de estructura y lógica
+- **`docs/`** — Documentación técnica, negocio y arquitectura
 - **`.github/`** — Templates y workflows de CI (GitHub Actions)
 - **`.streamlit/`** — Configuración de Streamlit (theme, server)
 
 ## Estado actual
 
-**Core MVP (~85%):** Modelo entrenado, serializado e integrado en dashboard Streamlit. Pipeline ML-Dashboard funcional end-to-end. UI/UX en mejora continua con Stitch.
+**Core MVP (100% Completado):** Modelo entrenado, serializado e integrado en dashboard Streamlit con tema oscuro premium, simulador interactivo de telemetría y sistema de alertas visuales en vivo. Pipeline ML-Dashboard funcional end-to-end.
 
 **Dataset seleccionado:** Microsoft Azure Predictive Maintenance (Azure PdM) ✅
 - Evaluación completada con matriz de 20 criterios ponderados.
-- Análisis automatizado en `notebooks/01_data_exploration.ipynb` (sección 10).
+- Análisis automatizado en `notebooks/01_data_exploration.ipynb`.
 - Documentación en `docs/dataset_selection.md` y `docs/decisions.md` (DEC-009).
 
 **Modelo Candidato (Random Forest):**
-- PR-AUC: 0.9932 | ROC-AUC: 0.9999 | Recall: 1.0 | Precision: 0.7634 (threshold=0.5385, values recorded in the current artifact)
-- Threshold stored in the current model artifact: 0.5385
-- 46 features (sensores + historial errores + mantenimiento + rolling windows 3h/6h/24h + deltas)
-- Serializado en `models/baseline_model.joblib` (version de scikit-learn registrada en el artefacto)
+- PR-AUC: 0.9919 | ROC-AUC: 0.9999 | Recall: 1.0 | Precision: 0.8001 (threshold=0.5591)
+- Threshold guardado en el artefacto: `0.5591`
+- 46 features (sensores + historial errores + mantenimiento + rolling windows + deltas)
+- Serializado en `models/baseline_model.joblib`
 
 **Split temporal (sin data leakage):**
 | Split | Filas | % | Periodo | Tasa positivos |
@@ -130,13 +126,16 @@ Activos ✅
 - Gap de 24h entre train y test
 - Validación anti-leakage: 4 estrategias confirman PR-AUC > 0.99 (temporal, mensual, por máquina, aleatorio)
 
-**Dashboard (`dashboard/app.py`):** Pipeline de inferencia batch funcional:
-- **Carga de datos:** `live_demo.parquet` (87,700 filas, 100 máquinas) desde GitHub (`feat/modeling_integration/data/processed/`) con fallback a `data/processed/live_demo.parquet` local. Cache 1h (`@st.cache_data`).
-- **Carga de modelo:** `baseline_model.joblib` desde GitHub (`feat/modeling_integration/models/`) con fallback local. Cache 1h (`@st.cache_resource`).
-- **Selector de origen:** Sidebar con radio `GitHub` / `Local` + botón 🔄 Recargar (limpia caches y rerunea).
-- **Inferencia:** `model.predict_proba()` sobre las 46 features del artefacto; el umbral binario se lee del propio artefacto. El ranking usa la última lectura disponible de cada máquina.
-- **Outputs:** `df_risk` (ranking riesgo/criticidad/prioridad), `df_telemetry` (series temporales), `df_errors` (histórico simulado).
-- **UI actual (en mejora con Stitch):** 3 tabs — Identificar (ranking + bar chart + alertas), Comprender (telemetría + errores + métricas dinámicas), Priorizar (cola intervención + recomendación). Sidebar muestra metadatos modelo (PR-AUC, threshold, features, fechas train/test).
+**Dashboard (`dashboard/app.py`):** Pipeline de inferencia en tiempo real y componentes avanzados:
+- **Carga de datos:** `live_demo.parquet` (87,700 filas, 100 máquinas) desde GitHub (`main/data/processed/`) con fallback local `data/processed/live_demo.parquet`. Cache con `@st.cache_data`.
+- **Carga de modelo:** `baseline_model.joblib` desde GitHub (`main/models/`) con fallback local. Cache con `@st.cache_resource`.
+- **Selector de origen:** Sidebar con radio `GitHub` / `Local` + botón 🔄 Recargar (limpia caches).
+- **Inferencia:** `model.predict_proba()` sobre las 46 features del artefacto; el umbral binario se lee del artefacto.
+- **Componentes clave:**
+  - `demo_simulator.py`: Simulador interactivo de telemetría y pruebas de resistencia/anomalías.
+  - `risk_table.py`: Matriz interactiva de riesgo con lámparas luminosas parpadeantes por nivel de criticidad.
+  - `machine_detail.py`: Diagnóstico individualizado por activo y recomendaciones de intervención.
+  - `sensor_chart.py`: Gráficos de tendencias temporales de sensores.
 
 **Tests:** 7/7 passing (`tests/`)
 
@@ -226,12 +225,12 @@ streamlit run dashboard/app.py
 
 ### Estado actual del dashboard
 
-- **Datos:** `live_demo.parquet` (87,700 filas, 100 máquinas, 46 features + target) desde GitHub `feat/modeling_integration/data/processed/` con fallback local.
-- **Modelo:** `baseline_model.joblib` (Random Forest, 2.50 MB) desde GitHub `feat/modeling_integration/models/` con fallback local.
+- **Datos:** `live_demo.parquet` (87,700 filas, 100 máquinas, 46 features + target) desde GitHub `main/data/processed/` con fallback local.
+- **Modelo:** `baseline_model.joblib` (Random Forest, 2.50 MB) desde GitHub `main/models/` con fallback local.
 - **Carga dual:** Sidebar con selector `GitHub` / `Local` + botón 🔄 Recargar (limpia `st.cache_data` y `st.cache_resource`, fuerza rerun).
 - **Riesgo por máquina:** Se muestra la probabilidad de falla de la última lectura disponible. Las predicciones binarias respetan el umbral guardado en el artefacto; no se fuerza una cantidad fija de positivos.
-- **UI/UX:** Funcional con 3 tabs (Identificar/Comprender/Priorizar) + sidebar (metadatos modelo, filtros, metadatos máquina). **En mejora continua con Stitch** (tema dark premium, componentes, responsive, accesibilidad).
-- **Decisiones:** El responsable de mantenimiento ve ranking de riesgo, señales (telemetría + errores), prioridad y recomendación de intervención (Intervenir/Inspeccionar/Monitorear/Ninguna).
+- **UI/UX:** Completa e interactiva con tema dark premium, componentes modulares, simulador de telemetría y alertas animadas.
+- **Decisiones:** El responsable de mantenimiento ve ranking de riesgo, señales (telemetría + errores), prioridad, plazos recomendados y recomendación de intervención (Intervenir/Inspeccionar/Monitorear/Ninguna).
 
 ## Cómo contribuir
 
@@ -240,7 +239,6 @@ Ver CONTRIBUTING.md.
 ## Limitaciones conocidas
 
 - El artefacto del modelo puede mostrar `InconsistentVersionWarning` si la versión de scikit-learn no coincide con la de entrenamiento (1.7.2 vs 1.9.1 actual); se recomienda regenerarlo en el entorno objetivo.
-- **UI/UX en mejora activa con Stitch:** Tema dark premium, componentes, responsive y accesibilidad en iteración. La funcionalidad core incluye carga dual, inferencia y ranking por lectura reciente.
 - FastAPI inicialmente no está incluido en el MVP.
 - Dataset AI4I 2020 solo para validación secundaria.
 
@@ -253,17 +251,16 @@ Los datos crudos van en data/raw/ y no se modifican.
 
 Crear variables derivadas es válido cuando existe justificación técnica o de negocio y el proceso es reproducible. No se deben inventar datos históricos.
 
-## Demo (En desarrollo)
+## Demo de la Aplicación
 
-El pipeline core (datos → modelo → inferencia → UI) está funcional. Ejecutar:
+El pipeline core (datos → modelo → inferencia → UI + simulador) está 100% funcional. Ejecutar:
 
 ```bash
 streamlit run dashboard/app.py
 ```
 
 El dashboard permite al responsable de mantenimiento:
-1. **Identificar** máquinas con mayor riesgo (ranking interactivo + bar chart + alertas críticas).
-2. **Comprender** señales (telemetría temporal volt/rotate/pressure/vibration + histórico de errores + feature importance en `docs/model.md`).
-3. **Priorizar** intervención (cola ordenada por `priority_score` = riesgo × criticidad + recomendación principal).
+1. **Identificar** máquinas con mayor riesgo (ranking interactivo + bar chart + alertas críticas luminosas).
+2. **Comprender** señales (telemetría temporal volt/rotate/pressure/vibration + histórico de errores + simulador de anomalías).
+3. **Priorizar** intervención (cola ordenada por `priority_score` = riesgo × criticidad + recomendación principal + plazos de atención).
 
-> **Nota:** La UI/UX está en proceso de refinamiento con Stitch. La funcionalidad core (carga GitHub/local, inferencia por máquina y ranking de riesgo) está completa pero en revisión.
