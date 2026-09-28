@@ -21,7 +21,7 @@ from utils.model_loader import get_model, predict_probabilities
 
 LIVE_DEMO_URL = (
     "https://raw.githubusercontent.com/No-Country-simulation/"
-    "S08-26-EQUIPO-24/feat/modeling_integration/data/processed/"
+    "S08-26-EQUIPO-24/main/data/processed/"
     "live_demo.parquet"
 )
 
@@ -69,7 +69,7 @@ def load_live_demo_data(prefer_local: bool = False) -> tuple[pd.DataFrame, str]:
     else:
         try:
             df = _load_from_url(LIVE_DEMO_URL)
-            source = "GitHub (feat/modeling_integration)"
+            source = "GitHub (main)"
         except Exception:
             local = os.path.normpath(LOCAL_LIVE_PATH)
             if os.path.exists(local):
@@ -140,6 +140,15 @@ def _extract_machine_metadata(df: pd.DataFrame) -> pd.DataFrame:
     })
 
     return machines_df
+
+
+def get_priority_machine(df_risk: pd.DataFrame) -> pd.Series:
+    """Return the highest-priority critical, moderate, or stable machine."""
+    for risk_level in ("Crítico", "Moderado"):
+        candidates = df_risk[df_risk["risk_level"] == risk_level]
+        if not candidates.empty:
+            return candidates.sort_values("priority_score", ascending=False).iloc[0]
+    return df_risk.sort_values("priority_score", ascending=False).iloc[0]
 
 
 def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = False) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -248,7 +257,7 @@ def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = Fa
     # Seleccionar y renombrar a lo que esperan los componentes
     df_telemetry = live_df[tele_cols].rename(columns={
         'datetime': 'timestamp',
-        'volt': 'temperature',
+        'volt': 'voltage',
         # 'vibration' y 'pressure' mantienen su nombre
     })
     # Asegurar tipos
