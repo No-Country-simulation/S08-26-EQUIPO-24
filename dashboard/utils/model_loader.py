@@ -1,7 +1,7 @@
 """Carga del modelo ML serializado (joblib) desde GitHub.
 
 El archivo `models/baseline_model.joblib` se aloja en la rama
-`feat/modeling_integration` del repositorio y contiene:
+`main` del repositorio y contiene:
 
 - model: RandomForestClassifier entrenado.
 - feature_cols: lista de 46 features en el orden esperado.
