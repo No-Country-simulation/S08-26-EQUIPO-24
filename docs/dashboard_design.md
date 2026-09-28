@@ -2,7 +2,7 @@
 
 **Responsable:** DS/DA (Data Analyst — Dashboard / UX)
 **Framework:** Streamlit (componentes nativos + Plotly + HTML/CSS personalizado)
-**Estado:** MVP Implementado (Premium Dark Theme, Integración ML Funcional)
+**Estado:** ✅ MVP Completado e Integrado (Tema Oscuro Premium, Simulador de Telemetría y Alertas Animadas)
 
 ---
 
@@ -10,17 +10,14 @@
 
 El dashboard se compone de:
 
-- `dashboard/app.py` — Entry point principal, orquestación y UI
-- `dashboard/components/` — Componentes modulares de visualización
-- `dashboard/utils/data_loader.py` — Carga de datos reales (`live_demo.parquet`) desde GitHub/local
-- `dashboard/utils/model_loader.py` — Carga del artefacto ML (`baseline_model.joblib`) desde GitHub/local
-
-Los componentes son:
-
-- `risk_table.py` — Tabla de ranking de riesgo con colores por nivel.
-- `sensor_chart.py` — Gráfico de telemetría de sensores en tiempo real.
-- `machine_detail.py` — Histórico de errores (expander).
-- `priority_list.py` — Lista de tareas prioritarias (con progress bars y UI rica).
+- `dashboard/app.py` — Entry point principal, orquestación, tema oscuro en CSS y UI.
+- `dashboard/components/` — Componentes modulares de visualización e interacción:
+  - `demo_simulator.py` — Simulador interactivo de telemetría en tiempo real y experimentos de anomalías.
+  - `risk_table.py` — Tabla de ranking de riesgo con lámparas de alerta parpadeantes (`alert-lamp`) y plazos de atención operativa.
+  - `machine_detail.py` — Detalle diagnósticos por activo y recomendaciones preventivas.
+  - `sensor_chart.py` — Gráficos de tendencias temporales de sensores.
+- `dashboard/utils/data_loader.py` — Carga de datos reales (`live_demo.parquet`) desde GitHub (`main`) o local.
+- `dashboard/utils/model_loader.py` — Carga del artefacto ML (`baseline_model.joblib`) desde GitHub (`main`) o local.
 
 ---
 
@@ -31,14 +28,15 @@ Los componentes son:
 | Elemento           | Streamlit                     | Datos                                      |
 | ------------------ | ----------------------------- | ------------------------------------------ |
 | Logo + código     | `st.markdown` + `st.caption` | S08-26-EQUIPO-24                           |
-| Origen de datos   | `st.radio`                    | GitHub / Local (selector de fuente)        |
+| Origen de datos   | `st.radio`                    | GitHub |
 | Recargar          | `st.button`                   | Limpia caches (`cache_data`, `cache_resource`) y rerunea |
-| Fuente de datos   | `st.markdown`                 | GitHub (feat/modeling_integration) / Local |
+| Fuente de datos   | `st.markdown`                 | GitHub (`main`) / Local                    |
 | **Metadatos ML**  | `st.markdown` (HTML card)    | Fuente, PR-AUC, Threshold, Features, fechas train/test |
 | Selector máquina  | `st.selectbox`              | `machine_id` (100 máquinas)   |
 | Filtro estado      | `st.multiselect`            | Crítico, Moderado, Estable                |
 | Filtro criticidad  | `st.multiselect`            | Alta, Media, Baja                          |
 | Metadatos rápidos | `st.write`                  | ID, Tipo, Ubicación, Horas, Mantenimiento |
+
 
 ### 2.2 Header principal
 
@@ -89,7 +87,7 @@ Layout: `st.columns([2, 1])`
 
 **Métricas dinámicas (st.metric):**
 - Valores en tiempo real (último registro) comparados con el inicio (delta).
-- 🌡️ Temperatura, 📳 Vibración, 💧 Presión.
+- 🌡️ Voltaje, 📳 Vibración, 💧 Presión.
 
 ### 3.3 Tab 3 — 🚀 Priorizar (Acción)
 
@@ -97,7 +95,7 @@ Elementos:
 
 - `st.info`: Explicación de criterio de priorización (riesgo × criticidad × impacto)
 - **Lista enriquecida**:
-  - Ranking con iconos (🥇, 🥈, 🥉).
+  - Ranking con numeración.
   - Progress bars (`st.progress`) para visualizar el riesgo de cada máquina.
 - **Card HTML de Recomendación**: Resumen visual con fondo con gradiente, bordes de color y los datos principales (ID, tipo, ubicación, días sin mantenimiento, acción a tomar).
 
@@ -139,7 +137,7 @@ El archivo `utils/data_loader.py` carga datos reales desde `live_demo.parquet`:
 - **100 máquinas** con telemetría horaria (87,700 filas).
 - **46 features** alineadas con el modelo (ver `docs/model.md` para la lista completa).
 - **Target histórico:** `failure_next_24h` (1.96% positivos).
-- **Origen:** GitHub (rama `feat/modeling_integration`) con fallback a local.
+- **Origen:** GitHub (rama `main`) con fallback a local.
 - **Cache:** `@st.cache_data(ttl=3600)` en el loader.
 
 La inferencia se ejecuta sobre `live_df` mediante `compute_risk_from_model()`, que:

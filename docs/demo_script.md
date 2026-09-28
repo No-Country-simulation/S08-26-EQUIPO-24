@@ -57,12 +57,13 @@ Demostrar que el sistema permite a un responsable de mantenimiento:
 | Componente | Estado | Ubicación |
 |------------|--------|-----------|
 | Notebook modelado | ✅ Completado | `notebooks/05_modeling.ipynb` |
-| Modelo serializado | ✅ En GitHub | `feat/modeling_integration/models/baseline_model.joblib` |
-| Live demo data | ✅ En GitHub | `feat/modeling_integration/data/processed/live_demo.parquet` |
+| Modelo serializado | ✅ En GitHub | `main/models/baseline_model.joblib` |
+| Live demo data | ✅ En GitHub | `main/data/processed/live_demo.parquet` |
 | Dashboard | ✅ Funcional | `dashboard/` |
 | Model loader | ✅ Funcional | `dashboard/utils/model_loader.py` (GitHub/local + cache) |
 | Data loader | ✅ Funcional | `dashboard/utils/data_loader.py` (carga real, inferencia) |
-| Tests | ✅ Pasando | `tests/test_prevalence.py`, `tests/test_project_structure.py` (7/7) |
+| Simulador | ✅ Funcional | `dashboard/components/demo_simulator.py` (telemetría + anomalías) |
+| Tests | ✅ Pasando | `tests/test_prevalence.py`, `tests/test_priority.py` |
 
 ---
 
@@ -146,7 +147,7 @@ cd dashboard && streamlit run app.py
 ## Criterios de Aceptación
 
 1. ✅ **Dashboard carga sin mock data**: `app.py` usa `load_live_demo_data()` + `compute_risk_from_model()`, no `load_mock_data()`
-2. ✅ **Modelo desde GitHub**: `model_loader.py` descarga desde `feat/modeling_integration/models/baseline_model.joblib`
+2. ✅ **Modelo desde GitHub**: `model_loader.py` descarga desde `main/models/baseline_model.joblib`
 3. ✅ **Live demo visible**: 100 máquinas con risk_score basado en inferencia real
 4. ✅ **Telemetría temporal**: Gráficos usan `datetime` real de live_df
 5. ✅ **Errores reales**: `machine_detail.py` muestra códigos/descripciones de df_errors

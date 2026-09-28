@@ -142,6 +142,15 @@ def _extract_machine_metadata(df: pd.DataFrame) -> pd.DataFrame:
     return machines_df
 
 
+def get_priority_machine(df_risk: pd.DataFrame) -> pd.Series:
+    """Return the highest-priority critical, moderate, or stable machine."""
+    for risk_level in ("Crítico", "Moderado"):
+        candidates = df_risk[df_risk["risk_level"] == risk_level]
+        if not candidates.empty:
+            return candidates.sort_values("priority_score", ascending=False).iloc[0]
+    return df_risk.sort_values("priority_score", ascending=False).iloc[0]
+
+
 def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = False) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Ejecuta inferencia del modelo sobre live_df y retorna df_risk + metadatos.
 
@@ -248,7 +257,7 @@ def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = Fa
     # Seleccionar y renombrar a lo que esperan los componentes
     df_telemetry = live_df[tele_cols].rename(columns={
         'datetime': 'timestamp',
-        'volt': 'temperature',
+        'volt': 'voltage',
         # 'vibration' y 'pressure' mantienen su nombre
     })
     # Asegurar tipos
