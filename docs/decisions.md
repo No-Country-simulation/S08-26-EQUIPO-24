@@ -115,7 +115,7 @@ Registro de decisiones arquitectónicas y de producto.
 
 - **Fecha:** 2026-09-23
 - **Contexto:** MVP funcional, modelo y datos publicados en GitHub.
-- **Decisión:** Deploy inicial en Streamlit Community Cloud. El dashboard consume el modelo y datos directamente desde GitHub (rama `feat/modeling_integration`) con fallback local.
+- **Decisión:** Deploy inicial en Streamlit Community Cloud. El dashboard consume el modelo y datos directamente desde GitHub (rama `main`) con fallback local.
 - **Consecuencia:** No se requiere infraestructura adicional para el MVP. Validar límites de ancho de banda y rendimiento en producción.
 
 ---

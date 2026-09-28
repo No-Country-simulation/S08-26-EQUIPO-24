@@ -2,19 +2,18 @@
 
 ## Estado actual
 
-- **Dataset seleccionado:** Azure Predictive Maintenance (Azure PdM)
-- Discovery completado
-- `01_data_exploration.ipynb` completado
-- `02_data_cleaning.ipynb` completado
-- `03_eda.ipynb` completado
-- `04_feature_engineering.ipynb` en cierre
-- `05_modeling.ipynb` en proceso
-- `06_explainability.ipynb` en proceso
-- `07_dashboard.ipynb` en proceso
-- Estructura base del proyecto creada
-- **Próxima fase:** Feature Engineering → Modelado → Integración al Dashboard
+- **Dataset seleccionado:** Azure Predictive Maintenance (Azure PdM) ✅
+- Discovery completado ✅
+- `01_data_exploration.ipynb` completado ✅
+- `02_data_cleaning.ipynb` completado ✅
+- `03_eda.ipynb` completado ✅
+- `04_feature_engineering.ipynb` completado ✅
+- `05_modeling.ipynb` completado (Random Forest serializado en `models/baseline_model.joblib`) ✅
+- `06_explainability.ipynb` completado (Feature importance e integración visual) ✅
+- `dashboard/` completado (Streamlit, tema oscuro, simulador interactivo de telemetría y alertas animadas) ✅
+- **Estado General:** ✅ MVP Core 100% Entregado e Integrado en `main`
 
-**Objetivo de esta fase:** El objetivo de esta fase es crear un modelo de machine learning que pueda predecir fallas en las máquinas.
+**Objetivo del proyecto:** Predecir fallas en equipos industriales con 24 horas de antelación, proporcionar explicabilidad de señales y recomendar acciones operativas priorizadas.
 
 ## 1. Visión general del flujo de datos
 
@@ -38,8 +37,8 @@ graph TD
     E --> F["Feature Engineering"]
     F --> G["Dataset ML (processed)"]
     G --> H["Modelado & Evaluación"]
-    H --> I["Pipeline Serializado (.pkl)"]
-    I --> J["Dashboard Streamlit"]
+    H --> I["Modelo Serializado (.joblib)"]
+    I --> J["Dashboard Streamlit + Simulador"]
 ```
 
 ## 2. Estructura recomendada de datos
@@ -285,20 +284,19 @@ Pregunta principal: **¿Por qué esta máquina presenta alto riesgo?** La explic
 
 Responsabilidad principal: **ML Pipeline & Integration**
 
-Artefactos previstos:
+Artefacto final generado:
 ```text
 models/
-├── pdm_pipeline.pkl
-├── features.pkl
-└── metrics.json
+└── baseline_model.joblib  (RandomForest, 46 features, threshold 0.5591)
 ```
 
-Las rutas definitivas pueden ajustarse cuando la implementación esté estabilizada.
+> [!NOTE]
+> **Nota sobre el Scaler:** Al utilizar un modelo de ensamble basado en árboles de decisión (**Random Forest**), el algoritmo es completamente invariante a la escala de las variables continuas. Por lo tanto, el artefacto `models/baseline_model.joblib` **no requiere ni incluye un objeto de escalamiento (Scaler)** (`StandardScaler`/`MinMaxScaler`), consumiendo las 46 features directamente sin transformaciones previas de escala.
 
 ## 36. FASE 7 — Integración con Streamlit
 
-El dashboard deberá consumir artefactos ya entrenados:
-Dashboard → `pdm_pipeline.pkl` → `features` / `input` → predicción → riesgo → explicación → prioridad.
+El dashboard consume directamente el artefacto entrenado:
+Dashboard → `baseline_model.joblib` → 46 features `live_demo.parquet` → `predict_proba()` → riesgo / nivel → simulación → prioridad.
 
 > [!IMPORTANT]
 > **Regla:** El dashboard NO debe entrenar, NO debe recalcular todo el pipeline de entrenamiento y NO debe depender de notebooks para funcionar. Debe utilizar funciones y artefactos reproducibles provenientes de `src/` y `models/`.
@@ -309,7 +307,7 @@ Los notebooks se utilizarán inicialmente para explorar y validar. Cuando una tr
 
 ## 38. Entregable técnico esperado
 
-La arquitectura final deberá evolucionar hacia:
+La arquitectura final evoluciona a:
 
 ```text
 src/
@@ -319,14 +317,13 @@ src/
 └── utils/
 
 models/
-├── pdm_pipeline.pkl
-├── features.pkl
-└── metrics.json
+└── baseline_model.joblib (2.50 MB)
 
 data/
 ├── raw/
 ├── interim/
 └── processed/
+    └── live_demo.parquet
 ```
 
 ## 39. Principios técnicos prioritarios

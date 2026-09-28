@@ -15,19 +15,21 @@ MODEL (Random Forest, entrenado 75% / test 15% / live 10%)
     ↓
 MODEL ARTIFACT (models/baseline_model.joblib — 2.50 MB)
     ↓
-DASHBOARD LAYER
-  ├── model_loader.py → descarga joblib desde GitHub (fallback local)
-  ├── data_loader.py  → descarga live_demo.parquet desde GitHub (fallback local)
+DASHBOARD LAYER & SIMULATOR
+  ├── model_loader.py → descarga joblib desde GitHub (rama main con fallback local)
+  ├── data_loader.py  → descarga live_demo.parquet desde GitHub (rama main con fallback local)
+  ├── demo_simulator.py → simulación interactiva de telemetría y pruebas de anomalías
   ├── compute_risk_from_model() → inferencia batch sobre live_df
   │     ├── model.predict_proba() → failure_probability
-  │     ├── threshold (0.5591) → predicción binaria
-  │     ├── df_risk → ranking riesgo / criticidad / prioridad
+  │     ├── threshold (0.5591) → predicción binaria y nivel de riesgo
+  │     ├── df_risk → ranking riesgo / criticidad / prioridad / plazo operativo
   │     ├── df_telemetry → series temporales por máquina
-  │     └── df_errors → histórico de errores simulado
+  │     └── df_errors → histórico de errores simulados
   ↓
-STREAMLIT (dashboard/app.py) → UI premium dark theme
+STREAMLIT (dashboard/app.py) → Tema Oscuro Premium + Alertas Visuales Animadas
     ↓
-DECISION (ranking, prioridad, recomendación de intervención)
+DECISION (ranking, recomendación preventiva, plazos de atención y acciones)
+
 
 ---
 
@@ -86,4 +88,4 @@ DECISION (ranking, prioridad, recomendación de intervención)
 - 1 solo Software Engineer.
 - Prioridad: producto funcional.
 
-Si en el futuro se requiere API, se documentará como decisión de arquitectura.
+Se documentará como decisión de arquitectura.

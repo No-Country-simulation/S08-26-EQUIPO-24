@@ -129,7 +129,7 @@ Suma top 4: 59.1%
 
 ### **Ubicación en GitHub:**
 ```
-S08-26-EQUIPO-24/feat/modeling_integration/models/baseline_model.joblib
+S08-26-EQUIPO-24/main/models/baseline_model.joblib
 ```
 
 ### **Contenido del artefacto:**
@@ -149,10 +149,14 @@ S08-26-EQUIPO-24/feat/modeling_integration/models/baseline_model.joblib
 - **positive_rate_train:** `0.02006` (2.01%)
 - **positive_rate_test:** `0.01685` (1.69%)
 
+### **Manejo de Escalador (Scaler):**
+- **Invariancia a Escala:** Al utilizar un algoritmo de ensamblado basado en árboles de decisión (**Random Forest**), el modelo es invariante a transformaciones monotónicas y a la escala relativa de las variables numéricas.
+- **Sin Scaler Serializado:** El artefacto `models/baseline_model.joblib` **no requiere ni incluye un objeto de escalamiento** (`StandardScaler`, `MinMaxScaler`, etc.). Las 46 características continuas y categóricas derivadas se introducen directamente en el modelo sin transformación de escala adicional, simplificando el pipeline de inferencia en el dashboard.
+
 ### **Metadatos adicionales:**
-- **Archivo:** 2.50 MB (serializado con joblib, 2,387 KB en GitHub)
+- **Archivo:** 2.50 MB (`models/baseline_model.joblib`, serializado con joblib)
 - **sklearn versión entrenamiento:** 1.7.2 (el entorno actual usa 1.9.1; puede emitir `InconsistentVersionWarning` al cargar)
-- **Almacenamiento:** En GitHub (rama `feat/modeling_integration`)
+- **Almacenamiento:** En GitHub (rama `main`)
 - **Cache:** Cacheado en `model_loader.py` con TTL de 1 hora (`st.cache_resource`)
 - **API:** Cargado a través de `dashboard/utils/model_loader.py` con fallback a archivo local
 
@@ -165,7 +169,7 @@ S08-26-EQUIPO-24/feat/modeling_integration/models/baseline_model.joblib
 | Componente | Estado | Ubicación |
 |------------|--------|-----------|
 | **Entrenamiento del modelo** | ✅ **COMPLETADO** | `notebooks/05_modeling.ipynb` (Random Forest, PR-AUC 0.9919) |
-| **Serialización del modelo** | ✅ **COMPLETADO** | `feat/modeling_integration/models/baseline_model.joblib` (GitHub) |
+| **Serialización del modelo** | ✅ **COMPLETADO** | `main/models/baseline_model.joblib` (GitHub) |
 | **Carga del modelo** | ✅ **COMPLETADO** | `dashboard/utils/model_loader.py` (con cache y fallback) |
 | **Dashboard de inferencia** | ✅ **COMPLETADO** | `dashboard/` (datos reales + modelo) |
 | **Demo/live** | ✅ **DISPONIBLE** | `data/processed/live_demo.parquet` (87,700 filas, 100 máquinas) |
@@ -185,19 +189,19 @@ S08-26-EQUIPO-24/feat/modeling_integration/models/baseline_model.joblib
 | `components/risk_table.py` | Tabla de riesgo por máquina | ✅ **Compatible** con data real |
 | `components/sensor_chart.py` | Gráficos de telemetría | ✅ **Compatible** con data real |
 | `components/machine_detail.py` | Histórico de errores | ✅ **Compatible** con data real |
-| `components/priority_list.py` | Cola de intervención | ✅ **Compatible** con data real |
+| `components/demo_simulator.py` | Simulador interactivo | ✅ **Completo** |
 | `utils/data_loader.py` | Loader de datos reales | ✅ **Nuevo** (desde mock data) |
 | `utils/model_loader.py` | Loader de modelo | ✅ **Funcionando** (desde GitHub/local) |
 
 ### **✅ METADATOS DEL MODELO EN UI**
 
 **Sidebar del dashboard muestra:**
-- **Fuente:** GitHub (feat/modeling_integration)
+- **Fuente:** GitHub (`main`)
 - **PR-AUC:** 0.9919
-- **Threshold:** 0.42
+- **Threshold:** 0.5591
 - **Features:** 46
-- **Entrenamiento:** 2015-11-25 → 2015-12-31
-- **Test:** 2016-01-01 → 2016-01-01
+- **Entrenamiento:** 2015-01-01 → 2015-09-30
+- **Test:** 2015-10-02 → 2015-11-25
 
 ### **✅ LISTO PARA DEMOSTRACIÓN**
 
@@ -229,9 +233,9 @@ S08-26-EQUIPO-24/feat/modeling_integration/models/baseline_model.joblib
 ## Criterios de Aceptación
 
 ### ✅ **Aprobado:**
-1. **Modelo desde GitHub:** Logs muestran `source: "GitHub (feat/modeling_integration)"`
+1. **Modelo desde GitHub:** Logs muestran `source: "GitHub (main)"`
 2. **live_demo.parquet carga:** 87,700 filas con 100 máquinas
-3. **Dashboard con data real:** Todas las 4 componentes usan inferencia real
+3. **Dashboard con data real:** Todos los componentes usan inferencia real
 4. **Metadatos expuestos:** Sidebar muestra PR-AUC, threshold, fechas
 5. **Validación completada:** 4 splits temporales sin leakage
 6. **Feature Importance:** Documentado en UI (top 15 features)
