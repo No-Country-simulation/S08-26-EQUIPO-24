@@ -4,6 +4,8 @@
 
 **Estado:** ✅ Completado (100%) — Modelo ML Serializado + Dashboard Streamlit con Simulador de Telemetría, Alertas Animadas e Interfaz UI/UX
 
+**🚀 Demo en producción:** [s08-26-equipo-24git-g3stte6g7k8tr9wbnrichu.streamlit.app](https://s08-26-equipo-24git-g3stte6g7k8tr9wbnrichu.streamlit.app/)
+
 ---
 
 ## ¿Qué es?
@@ -253,7 +255,9 @@ Crear variables derivadas es válido cuando existe justificación técnica o de 
 
 ## Demo de la Aplicación
 
-El pipeline core (datos → modelo → inferencia → UI + simulador) está 100% funcional. Ejecutar:
+🔗 **App en vivo:** https://s08-26-equipo-24git-g3stte6g7k8tr9wbnrichu.streamlit.app/
+
+El pipeline core (datos → modelo → inferencia → UI + simulador) está 100% funcional. También se puede ejecutar localmente:
 
 ```bash
 streamlit run dashboard/app.py
