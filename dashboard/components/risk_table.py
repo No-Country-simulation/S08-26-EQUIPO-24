@@ -1,59 +1,95 @@
-"""Componente: Tabla de ranking de riesgo."""
+"""Matriz de riesgo por activo con accesos a sus vistas de detalle."""
+
+import html
 
 import pandas as pd
 import streamlit as st
 
+from components.machine_detail import format_machine_id, navigate_to_section
+
 
 def render_risk_table(df_risk, selected_status, selected_criticality):
-    """Muestra la tabla interactiva de ranking de riesgo con colores por nivel.
+    """Renderiza los activos filtrados y permite abrir sus vistas relacionadas."""
+    if "machineID" in df_risk.columns and "machine_id" not in df_risk.columns:
+        df_risk = df_risk.rename(columns={"machineID": "machine_id"})
 
-    Args:
-        df_risk: DataFrame con columnas machine_id, risk_score, risk_level, criticality, priority.
-        selected_status: Lista de niveles de riesgo filtrados.
-        selected_criticality: Lista de criticidad filtrada.
-    """
-    # Asegurar consistencia en el nombre de la columna
-    if 'machineID' in df_risk.columns:
-        df_risk = df_risk.rename(columns={'machineID': 'machine_id'})
-
-    # Filtrar por estado y criticidad
     df_filtered = df_risk[
-        df_risk['risk_level'].isin(selected_status) &
-        df_risk['criticality'].isin(selected_criticality)
+        df_risk["risk_level"].isin(selected_status)
+        & df_risk["criticality"].isin(selected_criticality)
     ].copy()
 
     if df_filtered.empty:
-        st.warning('No hay máquinas con los filtros aplicados.')
+        st.warning("No hay máquinas con los filtros aplicados.")
         return
 
-    # Formatear score como porcentaje
-    df_filtered['Riesgo %'] = df_filtered['risk_score'].apply(lambda x: f'{x:.0f}%')
+    df_filtered["priority_score_display"] = (
+        df_filtered["risk_score"] * df_filtered["priority_score"]
+    ).round(1)
 
-    # Renombrar columnas para display
-    df_display = df_filtered[['machine_id', 'Riesgo %', 'risk_level', 'criticality', 'priority']].copy()
-    df_display.columns = ['Máquina', 'Riesgo', 'Nivel', 'Criticidad', 'Acción']
+    headers = st.columns([0.8, 0.65, 0.85, 0.9, 0.9, 0.65, 1.8], vertical_alignment="center")
+    for column, label in zip(
+        headers,
+        ["MÁQUINA", "RIESGO", "NIVEL", "CRITICIDAD", "ACCIÓN", "PUNTUACIÓN", "ABRIR VISTA"],
+    ):
+        with column:
+            st.markdown(
+                f"<div class='eyebrow' style='padding:.45rem 0;border-bottom:1px solid rgba(126,171,255,.2)'>{label}</div>",
+                unsafe_allow_html=True,
+            )
 
-    # Aplicar color por nivel de riesgo
-    def color_risk(val):
-        if val == 'Crítico':
-            return 'background-color: #ffcccc; color: #b30000; font-weight: bold'
-        elif val == 'Moderado':
-            return 'background-color: #fff2cc; color: #7f6000'
-        elif val == 'Estable':
-            return 'background-color: #ccffcc; color: #006600'
-        return ''
+    for row_index, (_, row) in enumerate(df_filtered.iterrows()):
+        machine_id = row["machine_id"]
+        level = str(row["risk_level"])
+        tone = "critical" if level.startswith("Cr") else "moderate" if level == "Moderado" else "stable"
+        criticality = str(row["criticality"])
+        action = str(row["priority"])
+        score = row["priority_score_display"]
+        score_text = f"{float(score):.1f}" if pd.notna(score) else "—"
+        key_suffix = f"{row_index}_{html.escape(str(machine_id))}"
+        with st.container(key=f"matrix_alert_{tone}_{key_suffix}"):
+            cells = st.columns([0.8, 0.65, 0.85, 0.9, 0.9, 0.65, 1.8], vertical_alignment="center")
 
-    df_styled = df_display.style.map(color_risk, subset=['Nivel'])
+            with cells[0]:
+                lamp = f"<i class='alert-lamp {tone}'></i>" if tone != "stable" else ""
+                st.markdown(f"{lamp}<strong>{html.escape(format_machine_id(machine_id))}</strong>", unsafe_allow_html=True)
+            with cells[1]:
+                risk_lamp = f"<i class='alert-lamp {tone}'></i>" if tone != "stable" else ""
+                st.markdown(
+                    f"<span class='matrix-risk-chip {tone}'>{risk_lamp}{float(row['risk_score']):.0f}%</span>",
+                    unsafe_allow_html=True,
+                )
+            with cells[2]:
+                st.markdown(
+                    f"<span class='matrix-risk-chip {tone}'>{html.escape(level)}</span>",
+                    unsafe_allow_html=True,
+                )
+            with cells[3]:
+                st.write(criticality)
+            with cells[4]:
+                st.write(action)
+            with cells[5]:
+                st.caption(score_text)
+            with cells[6]:
+                actions = st.columns(2, gap="small")
+                with actions[0]:
+                    if st.button(
+                        "Telemetría",
+                        key=f"matrix_telemetry_{key_suffix}",
+                        help=f"Ver telemetría de {format_machine_id(machine_id)}",
+                        width="stretch",
+                    ):
+                        navigate_to_section(machine_id, "telemetry")
+                with actions[1]:
+                    if st.button(
+                        "Diagnóstico",
+                        key=f"matrix_diagnostic_{key_suffix}",
+                        help=f"Ver diagnóstico de {format_machine_id(machine_id)}",
+                        width="stretch",
+                    ):
+                        navigate_to_section(machine_id, "anomalies")
 
-    st.dataframe(
-        df_styled,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            'Máquina': st.column_config.TextColumn('Máquina', width='medium'),
-            'Riesgo': st.column_config.TextColumn('Riesgo', width='small'),
-            'Nivel': st.column_config.TextColumn('Nivel', width='medium'),
-            'Criticidad': st.column_config.TextColumn('Criticidad', width='medium'),
-            'Acción': st.column_config.TextColumn('Acción', width='medium'),
-        }
-    )
+        if row_index < len(df_filtered) - 1:
+            st.markdown(
+                "<div style='border-bottom:1px solid rgba(140,144,159,.13);margin:.05rem 0 .2rem'></div>",
+                unsafe_allow_html=True,
+            )
