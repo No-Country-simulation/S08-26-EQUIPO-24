@@ -46,6 +46,6 @@ def test_machine_ids_are_strings_in_all_frames(risk_outputs):
 
 def test_telemetry_uses_names_expected_by_components(risk_outputs):
     _, _, (_, _, df_telemetry, _) = risk_outputs
-    assert {"timestamp", "machine_id", "temperature", "vibration", "pressure"} <= set(
+    assert {"timestamp", "machine_id", "voltage", "vibration", "pressure"} <= set(
         df_telemetry.columns
     )
