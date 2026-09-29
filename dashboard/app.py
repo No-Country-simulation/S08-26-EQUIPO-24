@@ -214,6 +214,14 @@ st.markdown(
     [class*='st-key-fleet_priority_card'] button,[class*='st-key-sidebar_fleet_alert'] button,[class*='st-key-selected_asset_card'] button,[class*='st-key-recommended_actions_card'] button,[class*='st-key-kpi_card_'] button,[class*='st-key-heatmap_diagnostic_'] button,[class*='st-key-matrix_telemetry_'] button,[class*='st-key-matrix_diagnostic_'] button,[class*='st-key-maintenance_telemetry_'] button,[class*='st-key-maintenance_diagnostic_'] button { box-sizing:border-box; border-radius:7px; line-height:1.25; }
     [class*='st-key-fleet_priority_card'] button > div,[class*='st-key-sidebar_fleet_alert'] button > div,[class*='st-key-selected_asset_card'] button > div,[class*='st-key-recommended_actions_card'] button > div,[class*='st-key-kpi_card_'] button > div { display:flex!important; flex-direction:column!important; align-items:flex-start!important; justify-content:flex-start!important; align-self:stretch!important; width:100%!important; min-width:0!important; margin:0!important; text-align:left!important; }
     [class*='st-key-heatmap_diagnostic_'] button:hover,[class*='st-key-matrix_telemetry_'] button:hover,[class*='st-key-matrix_diagnostic_'] button:hover,[class*='st-key-maintenance_telemetry_'] button:hover,[class*='st-key-maintenance_diagnostic_'] button:hover { border-color:var(--blue); background:rgba(77,142,255,.18); color:var(--text); }
+    [class*='st-key-maintenance_record_'] { box-sizing:border-box; padding:.55rem .65rem!important; border-radius:7px!important; background:linear-gradient(150deg,rgba(23,31,51,.9),rgba(17,26,45,.88))!important; }
+    [class*='st-key-maintenance_record_red'] { border-color:rgba(255,83,83,.58)!important; border-left:3px solid #ff5353!important; background:linear-gradient(145deg,rgba(111,24,34,.42),rgba(34,31,45,.88))!important; animation:alert-card-pulse 2.2s ease-in-out infinite; }
+    [class*='st-key-maintenance_record_yellow'] { border-color:rgba(255,138,50,.52)!important; border-left:3px solid #ff8a32!important; background:linear-gradient(145deg,rgba(112,62,20,.34),rgba(34,37,48,.88))!important; }
+    [class*='st-key-maintenance_record_green'] { border-left:3px solid #54e18c!important; }
+    .priority-details { min-width:0; padding:.05rem .2rem; }
+    .priority-details .priority-title { flex-wrap:wrap; gap:.35rem .55rem; }
+    .priority-details .priority-copy { margin-top:.22rem; font-size:.72rem; line-height:1.25; }
+    .priority-details .priority-meta { gap:.3rem .65rem; margin-top:.32rem; }
     @media (max-width:900px) { .ai-diagnostic-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ai-result-card:last-child { grid-column:1/-1; } }
     @media (max-width:600px) { .ai-diagnostic-grid { grid-template-columns:1fr; } .ai-result-card:last-child { grid-column:auto; } }
     @media (max-width:800px) { [data-testid="stMainBlockContainer"] { padding:.75rem 1rem 1.5rem; } .banner { align-items:flex-start; flex-direction:column; } .risk-legend { justify-content:flex-start; flex-wrap:wrap; } [class*='st-key-kpi_card_'] button { min-height:5.5rem; padding:.45rem; } .telemetry-head { align-items:flex-start; flex-direction:column; } .anomaly-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .resource-grid { grid-template-columns:1fr; } .maintenance-hero { align-items:flex-start; flex-direction:column; } .topbar > div:last-child { display:none; } }
@@ -887,21 +895,24 @@ if st.session_state.active_section == "maintenance":
     for rank, (_, row) in enumerate(ordered.iterrows(), start=1):
         tone = risk_color(row["risk_level"])
         row_tone = risk_tone(row["risk_level"])
-        row_alert_class = "alert-critical-card" if row_tone == "red" else "alert-moderate-card" if row_tone == "yellow" else ""
         row_lamp = "critical" if row_tone == "red" else "moderate" if row_tone == "yellow" else ""
         selected_badge = "<span class='pill'>SELECCIONADA</span>" if str(row["machine_id"]) == str(selected_machine) else ""
         rkey = f"show_report_{row['machine_id']}"
-        with st.container(border=True):
-            content_col, btn_col = st.columns([10, 2])
+        with st.container(border=True, key=f"maintenance_record_{row_tone}_{rank}_{row['machine_id']}"):
+            content_col, btn_col = st.columns([8.5, 3.5], vertical_alignment="center", gap="small")
             with content_col:
-                st.markdown(f"<div class='priority {row_alert_class}' style='border-left-color:{tone}'><div class='priority-title'><span class='rank-badge' style='background:{tone}'>{rank}</span><i class='alert-lamp {row_lamp}'></i>{html.escape(format_machine_id(row['machine_id']))} {selected_badge} — {html.escape(str(row['type']))} <span class='pill {risk_pill(row['risk_level'])}'>{row['risk_score']:.0f}% · {html.escape(str(row['risk_level']).upper())}</span></div><div class='priority-copy'>Acción: {html.escape(str(row['priority']))} · Ubicación: {html.escape(str(row['location']))}</div><div class='priority-meta'><span>Criticidad: {html.escape(str(row['criticality']))}</span><span>{int(row['days_since_maintenance'])} días sin mantenimiento</span><span>Prioridad: {row['priority_score']:.0f}</span></div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='priority-details'><div class='priority-title'><span class='rank-badge' style='background:{tone}'>{rank}</span><i class='alert-lamp {row_lamp}'></i>{html.escape(format_machine_id(row['machine_id']))} {selected_badge} — {html.escape(str(row['type']))} <span class='pill {risk_pill(row['risk_level'])}'>{row['risk_score']:.0f}% · {html.escape(str(row['risk_level']).upper())}</span></div><div class='priority-copy'>Acción: {html.escape(str(row['priority']))} · Ubicación: {html.escape(str(row['location']))}</div><div class='priority-meta'><span>Criticidad: {html.escape(str(row['criticality']))}</span><span>{int(row['days_since_maintenance'])} días sin mantenimiento</span><span>Prioridad: {row['priority_score']:.0f}</span></div></div>", unsafe_allow_html=True)
             with btn_col:
-                if st.button("📡", key=f"maintenance_telemetry_{rank}_{row['machine_id']}", help="Ver telemetría", width="stretch"):
-                    navigate_to_section(row["machine_id"], "telemetry")
-                if st.button("🔍", key=f"maintenance_diagnostic_{rank}_{row['machine_id']}", help="Ver diagnóstico", width="stretch"):
-                    navigate_to_section(row["machine_id"], "anomalies")
-                if st.button("📋", key=f"maintenance_report_{rank}_{row['machine_id']}", help="Ver reporte de señales", width="stretch"):
-                    st.session_state[rkey] = not st.session_state.get(rkey, False)
+                action_cols = st.columns(3, gap="small")
+                with action_cols[0]:
+                    if st.button("📡", key=f"maintenance_telemetry_{rank}_{row['machine_id']}", help="Ver telemetría", width="stretch"):
+                        navigate_to_section(row["machine_id"], "telemetry")
+                with action_cols[1]:
+                    if st.button("🔍", key=f"maintenance_diagnostic_{rank}_{row['machine_id']}", help="Ver diagnóstico", width="stretch"):
+                        navigate_to_section(row["machine_id"], "anomalies")
+                with action_cols[2]:
+                    if st.button("📋", key=f"maintenance_report_{rank}_{row['machine_id']}", help="Ver reporte de señales", width="stretch"):
+                        st.session_state[rkey] = not st.session_state.get(rkey, False)
         if st.session_state.get(rkey, False):
             with st.expander(f"📋 Mini-reporte de señales — {format_machine_id(row['machine_id'])}", expanded=True):
                 sig = compute_machine_signals(row["machine_id"], dashboard_live_df, model, feature_cols, row, row)
