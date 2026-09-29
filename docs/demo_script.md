@@ -105,6 +105,9 @@ Demostrar que el sistema permite a un responsable de mantenimiento:
 | `sensor_chart.py` | ✅ Filtra `df_telemetry` por machine_id, usa timestamps reales |
 | `machine_detail.py` | ✅ Muestra error_code/description reales de `df_errors` |
 | `priority_list.py` | ✅ Ordena por `priority_score` real (riesgo × criticidad) |
+| `mini_report.py` | ✅ Nuevo — mini-reporte con feature importance, causa raíz y acciones |
+| `demo_simulator.py` | ✅ Simulador con `simulation_tick()` global + `run_every=0.8` |
+| `utils/diagnostics.py` | ✅ Nuevo — `get_root_cause()`, `get_action_recommendation()` |
 
 ### FASE 4: Validación y Pruebas ✅
 
@@ -118,6 +121,22 @@ cd dashboard && streamlit run app.py
 - [x] Telemetría temporal real (datetime de live_df)
 - [x] Errores históricos reales (df_errors generado desde recent_errors)
 - [x] Sidebar expone PR-AUC, threshold, fechas train/test
+
+### FASE 5: Gráficos en vivo + Mini-reporte de señales ✅
+
+**Gráficos en vivo (telemetría + diagnóstico):**
+
+- `simulation_tick()` extraído de `demo_simulator.py` como fragmento global (`@st.fragment(run_every=0.8)`) que avanza el reloj de simulación en **todas** las secciones.
+- **Modo en vivo** toggle en el encabezado de telemetría: inicia/pausa la simulación con indicador visual "● EN VIVO".
+- El gráfico de telemetría se actualiza cada 0.8s con la ventana de datos simulada.
+- El diagnóstico (FFT + eventos) se filtra por el timestamp del simulador y se re-renderiza vía `@st.fragment(run_every=0.8)`.
+
+**Mini-reporte de señales (mantenimiento):**
+
+- `components/mini_report.py` nuevo: `compute_machine_signals()` extrae top-5 features, valores actuales, promedio de flota, lecturas de sensores y metadatos.
+- `render_mini_report()` muestra: ranking de importancia, lecturas en vivo, causa raíz (mapeos industriales) y acción recomendada (intervenir/inspeccionar/monitorear).
+- Botón "📋 Reporte" en cada fila de la cola de prioridad y en las hero-cards del top 3.
+- `utils/diagnostics.py` nuevo: `get_root_cause()` y `get_action_recommendation()` compartidos entre diagnóstico y mini-reporte.
 
 ---
 
