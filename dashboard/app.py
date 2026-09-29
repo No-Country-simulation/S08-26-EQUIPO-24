@@ -10,12 +10,19 @@ from components.sensor_chart import render_sensor_chart, telemetry_figure, fft_f
 from components.risk_table import render_risk_table
 from components.demo_simulator import (
     PERIOD_HOURS,
+    SIM_ALERT_KEY,
     render_demo_simulator,
     reset_simulation_state,
     simulation_snapshot,
+    simulation_tick,
+    is_simulator_running,
+    get_current_sim_time,
+    get_current_sim_frame,
 )
+from components.mini_report import compute_machine_signals, render_mini_report
 from utils.data_loader import compute_risk_from_model, get_priority_machine, load_live_demo_data
 from utils.model_loader import get_model
+from utils.diagnostics import get_root_cause
 
 
 st.set_page_config(
@@ -509,6 +516,19 @@ except Exception as error:
     st.error(f"Error al cargar datos o modelo: {error}")
     st.stop()
 
+# ── Global simulation loop ─────────────────────────────────────────────────
+# Advances the replay clock on every section so telemetry and diagnosis
+# charts animate continuously in "live mode".  The panel only renders UI.
+@st.fragment(run_every=0.8)
+def _global_sim_loop():
+    if is_simulator_running():
+        simulation_tick(
+            live_df, model, feature_cols,
+            meta.get("decision_threshold", 0.5),
+        )
+
+_global_sim_loop()
+
 selected_machine, selected_status, selected_criticality = render_sidebar(df_machines, df_risk, data_source, model_source, feature_cols)
 st.markdown("<div class='topbar'><div><span class='brand'>&#128295; Mantenimiento predictivo</span><div class='eyebrow'>S08-26-EQUIPO-24 · DESCUBRIMIENTO / MVP · <span style='color:var(--green)'><span class='status-dot'></span>DEMO ACTIVA</span></div></div><div class='mono' style='color:var(--muted);font-size:.7rem'>Streamlit Core 1.63</div></div>", unsafe_allow_html=True)
 st.markdown("<div class='banner'><div><div class='banner-title'>Monitor Diagnóstico Industrial <span class='pill'>PLANTA-SUR // LÍNEA-A</span></div><div class='banner-copy'>Análisis predictivo multivariante sobre el conjunto de datos de demostración.</div></div><div class='pill'><span class='status-dot'></span>FUENTE: LIVE_DEMO</div></div>", unsafe_allow_html=True)
@@ -662,12 +682,31 @@ if st.session_state.active_section == "overview":
 
 if st.session_state.active_section == "telemetry":
     with st.container(border=True, key="live_telemetry_panel"):
-        st.markdown(
-            f"<div class='section-head'><div><h2>Telemetr\u00eda en Vivo \u00b7 {format_machine_id(selected_machine)}</h2>"
-            "<p>Vista historica de las lecturas disponibles para el activo seleccionado.</p></div>"
-            "<span class='pill'>HISTORICO LIVE_DEMO</span></div>",
-            unsafe_allow_html=True,
-        )
+        header_cols = st.columns([1, 1], vertical_alignment="center")
+        with header_cols[0]:
+            st.markdown(
+                f"<div class='section-head'><div><h2>Telemetr\u00eda en Vivo \u00b7 {format_machine_id(selected_machine)}</h2>"
+                "<p>Vista historica de las lecturas disponibles para el activo seleccionado.</p></div>",
+                unsafe_allow_html=True,
+            )
+        with header_cols[1]:
+            if is_simulator_running():
+                st.markdown(
+                    "<span class='alert-lamp critical' style='display:inline-block;width:9px;height:9px;margin-right:.3rem'></span>"
+                    "<span class='pill pill-red' style='font:600 .68rem JetBrains Mono,monospace'>● EN VIVO</span>",
+                    unsafe_allow_html=True,
+                )
+                if st.button("⏸", key="live_pause_btn", help="Pausar simulación en vivo", width="auto"):
+                    st.session_state["demo_sim_running"] = False
+                    st.rerun(scope="app")
+            else:
+                st.markdown("<span class='pill'>HISTORICO LIVE_DEMO</span>", unsafe_allow_html=True)
+                if st.button("▶ Modo en vivo", key="live_start_btn", type="primary", help="Iniciar simulación de datos en vivo", width="stretch"):
+                    st.session_state["demo_sim_running"] = True
+                    st.session_state["demo_sim_index"] = 0
+                    st.session_state.pop("demo_sim_datetime", None)
+                    st.session_state[SIM_ALERT_KEY] = {}
+                    st.rerun(scope="app")
         df_live_selected = df_telemetry[
             df_telemetry["machine_id"] == selected_machine
         ].sort_values("timestamp")
@@ -725,7 +764,13 @@ if st.session_state.active_section == "anomalies":
     selected_tone = risk_tone(selected_risk["risk_level"])
     selected_alert_class = "critical" if selected_tone == "red" else "moderate" if selected_tone == "yellow" else "stable"
     selected_lamp = "critical" if selected_tone == "red" else "moderate" if selected_tone == "yellow" else ""
-    st.markdown(f"<div class='telemetry-head {'alert-surface-critical alert-critical-card' if selected_tone == 'red' else 'alert-surface-moderate' if selected_tone == 'yellow' else ''}'><div><span class='machine-tag' style='color:{risk_color(selected_risk['risk_level'])}'>&#128269;</span><div><h2>Diagn\u00f3stico de {html.escape(format_machine_id(selected_machine))}</h2><p>Modelado FFT y clasificaci\u00f3n de anomal\u00edas sobre el activo seleccionado.</p></div></div><span class='pill {risk_pill(selected_risk['risk_level'])}'><i class='alert-lamp {selected_lamp}'></i>{html.escape(str(selected_risk['risk_level']).upper())}</span></div>", unsafe_allow_html=True)
+    sim_running = is_simulator_running()
+    _sim_indicator = (
+        "<span class='pill pill-red' style='margin-left:.5rem;font:600 .68rem JetBrains Mono,monospace'>"
+        "<i class='alert-lamp critical'></i>\u25cf EN VIVO</span>"
+        if sim_running else ""
+    )
+    st.markdown(f"<div class='telemetry-head {'alert-surface-critical alert-critical-card' if selected_tone == 'red' else 'alert-surface-moderate' if selected_tone == 'yellow' else ''}'><div><span class='machine-tag' style='color:{risk_color(selected_risk['risk_level'])}'>&#128269;</span><div><h2>Diagn\u00f3stico de {html.escape(format_machine_id(selected_machine))}</h2><p>Modelado FFT y clasificaci\u00f3n de anomal\u00edas sobre el activo seleccionado.</p></div></div><span class='pill {risk_pill(selected_risk['risk_level'])}'><i class='alert-lamp {selected_lamp}'></i>{html.escape(str(selected_risk['risk_level']).upper())}</span>{_sim_indicator}</div>", unsafe_allow_html=True)
     anomaly_col, heat_col = st.columns([1, 2])
     with anomaly_col:
         confidence = float(selected_risk["risk_score"])
@@ -737,46 +782,59 @@ if st.session_state.active_section == "anomalies":
     with heat_col:
         st.markdown("<div class='section-head'><div><h3>Mapa de estado por activo</h3><p>Vista preparada para conectar subsistemas y sensores reales.</p></div></div>", unsafe_allow_html=True)
         render_anomaly_heatmap(df_risk, selected_machine)
-    fft_col, events_col = st.columns([7, 5])
-    with fft_col:
-        st.markdown("<div class='section-head'><div><h3>Espectro de frecuencia vibracional (FFT)</h3><p>Acelerómetro triaxial · Eje de vibración de la máquina seleccionada.</p></div><span class='pill'>BPFO ANALYSIS</span></div>", unsafe_allow_html=True)
-        if not anomaly_telemetry.empty:
-            st.plotly_chart(fft_figure(anomaly_telemetry), width="stretch", config={"displayModeBar": False})
-    with events_col:
-        st.markdown("<div class='section-head'><div><h3>Registro crítico de eventos</h3><p>Últimas señales y diagnósticos del activo.</p></div></div>", unsafe_allow_html=True)
-        selected_errors = df_errors[df_errors["machine_id"] == selected_machine].sort_values("timestamp", ascending=False).head(3)
-        if selected_errors.empty:
-            st.success(f"Sin eventos registrados para {format_machine_id(selected_machine)}.")
+    sim_running = is_simulator_running()
+
+    def _render_anomaly_charts():
+        sim_time = get_current_sim_time()
+        if sim_running and sim_time is not None and not anomaly_telemetry.empty:
+            fft_data = anomaly_telemetry[anomaly_telemetry["timestamp"] <= pd.Timestamp(sim_time)].tail(50)
         else:
-            for _, event in selected_errors.iterrows():
-                ec = str(event['error_code']).upper()
-                if "VIB" in ec or "ROT" in ec:
-                    root_cause = "🚨 Root Cause: Resonancia crítica en cojinetes/rodamientos (patrón BPFO)"
-                    rc_color = "#ff5353"
-                elif "VOLT" in ec:
-                    root_cause = "⚡ Root Cause: Fluctuación transitoria en línea de alimentación eléctrica"
-                    rc_color = "#ffb4ab"
-                elif "PRESS" in ec:
-                    root_cause = "💧 Root Cause: Pérdida de presión hidráulica en circuito de retorno"
-                    rc_color = "#a4c9ff"
-                elif "TEMP" in ec:
-                    root_cause = "🔥 Root Cause: Temperatura elevada en bobinado de inducción estatórica"
-                    rc_color = "#ff8a32"
-                else:
-                    root_cause = "🔧 Root Cause: Desgaste general de componentes mecánicos"
-                    rc_color = "#9da6bd"
-                st.markdown(
-                    f"<div class='sidebar-card'>"
-                    f"<div class='eyebrow'>{html.escape(str(event['timestamp'])[:16])} · "
-                    f"<span style='color:{rc_color};font-weight:700'>{html.escape(str(event['error_code']))}</span></div>"
-                    f"<div style='color:var(--text);font-size:.78rem;margin-top:.35rem'>{html.escape(str(event['description']))}</div>"
-                    f"<div style='color:{rc_color};font-size:.68rem;margin-top:.3rem;font-family:JetBrains Mono,monospace'>{root_cause}</div>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
+            fft_data = anomaly_telemetry
+
+        fft_col, events_col = st.columns([7, 5])
+        with fft_col:
+            st.markdown("<div class='section-head'><div><h3>Espectro de frecuencia vibracional (FFT)</h3><p>Acelerómetro triaxial · Eje de vibración de la máquina seleccionada.</p></div><span class='pill'>BPFO ANALYSIS</span></div>", unsafe_allow_html=True)
+            if not fft_data.empty:
+                st.plotly_chart(fft_figure(fft_data), width="stretch", config={"displayModeBar": False})
+            else:
+                st.info("No hay datos de FFT disponibles en esta ventana.")
+        with events_col:
+            st.markdown("<div class='section-head'><div><h3>Registro crítico de eventos</h3><p>Últimas señales y diagnósticos del activo.</p></div></div>", unsafe_allow_html=True)
+            if sim_time is not None:
+                event_cutoff = df_errors["timestamp"] <= pd.Timestamp(sim_time)
+                event_errors = df_errors[event_cutoff]
+            else:
+                event_errors = df_errors
+            selected_errors = event_errors[event_errors["machine_id"] == selected_machine].sort_values("timestamp", ascending=False).head(3)
+            if selected_errors.empty:
+                st.success(f"Sin eventos registrados para {format_machine_id(selected_machine)}.")
+            else:
+                for _, event in selected_errors.iterrows():
+                    root_cause, rc_color = get_root_cause(event["error_code"])
+                    esc_ts = html.escape(str(event['timestamp'])[:16])
+                    esc_ec = html.escape(str(event['error_code']))
+                    esc_desc = html.escape(str(event['description']))
+                    esc_rc = html.escape(root_cause)
+                    st.markdown(
+                        f"<div class='sidebar-card'>"
+                        f"<div class='eyebrow'>{esc_ts} · "
+                        f"<span style='color:{rc_color};font-weight:700'>{esc_ec}</span></div>"
+                        f"<div style='color:var(--text);font-size:.78rem;margin-top:.35rem'>{esc_desc}</div>"
+                        f"<div style='color:{rc_color};font-size:.68rem;margin-top:.3rem;font-family:JetBrains Mono,monospace'>{esc_rc}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+    if sim_running:
+        @st.fragment(run_every=0.8)
+        def _live_anomaly_chart():
+            _render_anomaly_charts()
+        _live_anomaly_chart()
+    else:
+        _render_anomaly_charts()
 
 if st.session_state.active_section == "maintenance":
-    ordered = df_risk.merge(df_machines[["machine_id", "type", "location", "days_since_maintenance"]], on="machine_id").sort_values("priority_score", ascending=False)
+    ordered = df_risk.merge(df_machines[["machine_id", "type", "location", "days_since_maintenance", "operating_hours"]], on="machine_id").sort_values("priority_score", ascending=False)
     if not ordered.empty:
         # Encabezado de sección
         st.markdown(
@@ -812,6 +870,17 @@ if st.session_state.active_section == "maintenance":
                     f"</div>",
                     unsafe_allow_html=True,
                 )
+        # Report buttons for hero cards (top 3)
+        hero_report_cols = st.columns(min(3, len(top_3)), gap="small")
+        for hero_i, (_, top) in enumerate(top_3.iterrows()):
+            with hero_report_cols[hero_i]:
+                rkey = f"show_report_{top['machine_id']}"
+                if st.button("📋 Reporte", key=f"hero_report_{top['machine_id']}", width="stretch"):
+                    st.session_state[rkey] = not st.session_state.get(rkey, False)
+                if st.session_state.get(rkey, False):
+                    with st.expander(f"📋 Señales — {format_machine_id(top['machine_id'])}", expanded=True):
+                        sig = compute_machine_signals(top["machine_id"], live_df, model, feature_cols, top, top)
+                        render_mini_report(sig, df_errors, meta)
     else:
 
         st.markdown("<div class='section-head'><div><h2>Plan de mantenimiento</h2><p>Sin activos disponibles para priorizar.</p></div><span class='pill pill-green'>OPERACIÓN NORMAL</span></div>", unsafe_allow_html=True)
@@ -824,11 +893,22 @@ if st.session_state.active_section == "maintenance":
         row_lamp = "critical" if row_tone == "red" else "moderate" if row_tone == "yellow" else ""
         selected_badge = "<span class='pill'>SELECCIONADA</span>" if str(row["machine_id"]) == str(selected_machine) else ""
         st.markdown(f"<div class='priority {row_alert_class}' style='border-left-color:{tone}'><div class='priority-title'><span class='rank-badge' style='background:{tone}'>{rank}</span><i class='alert-lamp {row_lamp}'></i>{html.escape(format_machine_id(row['machine_id']))} {selected_badge} — {html.escape(str(row['type']))} <span class='pill {risk_pill(row['risk_level'])}'>{row['risk_score']:.0f}% · {html.escape(str(row['risk_level']).upper())}</span></div><div class='priority-copy'>Acción: {html.escape(str(row['priority']))} · Ubicación: {html.escape(str(row['location']))}</div><div class='priority-meta'><span>Criticidad: {html.escape(str(row['criticality']))}</span><span>{int(row['days_since_maintenance'])} días sin mantenimiento</span><span>Prioridad: {row['priority_score']:.0f}</span></div></div>", unsafe_allow_html=True)
+        rkey = f"show_report_{row['machine_id']}"
         if row_tone in {"red", "yellow"}:
-            action_cols = st.columns([1, 1, 4])
+            action_cols = st.columns([1, 1, 1, 3])
             with action_cols[0]:
                 if st.button("Telemetría", key=f"maintenance_telemetry_{rank}_{row['machine_id']}", width="stretch"):
                     navigate_to_section(row["machine_id"], "telemetry")
             with action_cols[1]:
                 if st.button("Diagnóstico", key=f"maintenance_diagnostic_{rank}_{row['machine_id']}", width="stretch"):
                     navigate_to_section(row["machine_id"], "anomalies")
+            with action_cols[2]:
+                if st.button("📋 Reporte", key=f"maintenance_report_{rank}_{row['machine_id']}", width="stretch"):
+                    st.session_state[rkey] = not st.session_state.get(rkey, False)
+        else:
+            if st.button("📋 Reporte", key=f"maintenance_report_{rank}_{row['machine_id']}", width="stretch"):
+                st.session_state[rkey] = not st.session_state.get(rkey, False)
+        if st.session_state.get(rkey, False):
+            with st.expander(f"📋 Mini-reporte de señales — {format_machine_id(row['machine_id'])}", expanded=True):
+                sig = compute_machine_signals(row["machine_id"], live_df, model, feature_cols, row, row)
+                render_mini_report(sig, df_errors, meta)
