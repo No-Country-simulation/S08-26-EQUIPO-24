@@ -146,26 +146,43 @@ def render_demo_simulator(
                             st.session_state[PERIOD_KEY] = period
                             st.rerun()
         with control_cols[2]:
-            button_cols = st.columns(3, gap="small")
+            button_cols = st.columns(5, gap="small")
             with button_cols[0]:
-                if st.button("▶ Iniciar", key="demo_start", type="primary", width="stretch", disabled=st.session_state[SIM_RUNNING_KEY]):
+                prev_disabled = st.session_state[SIM_INDEX_KEY] <= 0
+                if st.button("\u23ee", key="demo_prev", width="stretch", help="Paso anterior", disabled=prev_disabled):
+                    new_idx = max(0, st.session_state[SIM_INDEX_KEY] - 1)
+                    st.session_state[SIM_INDEX_KEY] = new_idx
+                    st.session_state[SIM_TIME_KEY] = pd.Timestamp(timeline[new_idx])
+                    st.session_state[SIM_RUNNING_KEY] = False
+                    st.rerun()
+            with button_cols[1]:
+                if st.button("\u25b6", key="demo_start", type="primary", width="stretch", help="Iniciar", disabled=st.session_state[SIM_RUNNING_KEY]):
                     if st.session_state[SIM_INDEX_KEY] >= len(timeline) - 1:
                         st.session_state[SIM_INDEX_KEY] = -1
                         st.session_state[SIM_TIME_KEY] = None
                         st.session_state[SIM_ALERT_KEY] = {}
                     st.session_state[SIM_RUNNING_KEY] = True
                     st.rerun()
-            with button_cols[1]:
-                if st.button("Ⅱ Pausar", key="demo_pause", width="stretch", disabled=not st.session_state[SIM_RUNNING_KEY]):
+            with button_cols[2]:
+                if st.button("\u2161", key="demo_pause", width="stretch", help="Pausar", disabled=not st.session_state[SIM_RUNNING_KEY]):
                     st.session_state[SIM_RUNNING_KEY] = False
                     st.rerun()
-            with button_cols[2]:
-                if st.button("↺ Reiniciar", key="demo_reset", width="stretch"):
+            with button_cols[3]:
+                next_disabled = st.session_state[SIM_INDEX_KEY] >= len(timeline) - 1
+                if st.button("\u23ed", key="demo_next", width="stretch", help="Paso siguiente", disabled=next_disabled):
+                    new_idx = min(len(timeline) - 1, st.session_state[SIM_INDEX_KEY] + 1)
+                    st.session_state[SIM_INDEX_KEY] = new_idx
+                    st.session_state[SIM_TIME_KEY] = pd.Timestamp(timeline[new_idx])
+                    st.session_state[SIM_RUNNING_KEY] = False
+                    st.rerun()
+            with button_cols[4]:
+                if st.button("\u21ba", key="demo_reset", width="stretch", help="Reiniciar"):
                     st.session_state[SIM_INDEX_KEY] = -1
                     st.session_state[SIM_TIME_KEY] = None
                     st.session_state[SIM_RUNNING_KEY] = False
                     st.session_state[SIM_ALERT_KEY] = {}
                     st.rerun()
+
         status = "REPRODUCIENDO" if st.session_state[SIM_RUNNING_KEY] else "EN PAUSA"
         st.markdown(
             f"<div class='simulator-controls-label'>ESTADO</div><span class='pill {'pill-green' if st.session_state[SIM_RUNNING_KEY] else ''}'>{status}</span>",
@@ -328,10 +345,15 @@ def render_demo_simulator(
         chart_rows = _telemetry_window(live_df, machine_id, current_time).copy()
         chart_rows = chart_rows.rename(columns={"datetime": "timestamp", "volt": "voltage"})
         render_chart(chart_rows)
-        st.caption(
-            f"Lectura {st.session_state[SIM_INDEX_KEY] + 1:,} de {len(timeline):,} · "
-            f"Fecha simulada: {pd.Timestamp(current_time):%Y-%m-%d %H:%M} · "
-            f"Umbral del modelo: {threshold:.1%}"
+
+        # Barra de progreso del lote reproducido
+        progress_val = (st.session_state[SIM_INDEX_KEY] + 1) / max(len(timeline), 1)
+        current_idx = st.session_state[SIM_INDEX_KEY] + 1
+        st.progress(
+            min(progress_val, 1.0),
+            text=f"Lectura {current_idx:,} de {len(timeline):,} · "
+                 f"{pd.Timestamp(current_time):%Y-%m-%d %H:%M} · "
+                 f"Umbral: {threshold:.1%}",
         )
         if st.session_state[SIM_INDEX_KEY] >= len(timeline) - 1 and not st.session_state[SIM_RUNNING_KEY]:
             st.info("La reproducción llegó al final del periodo disponible.")

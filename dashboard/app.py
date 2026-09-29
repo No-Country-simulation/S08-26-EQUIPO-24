@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.machine_detail import format_machine_id, navigate_to_section, render_machine_detail
-from components.sensor_chart import render_sensor_chart
+from components.sensor_chart import render_sensor_chart, telemetry_figure, fft_figure
 from components.risk_table import render_risk_table
 from components.demo_simulator import (
     PERIOD_HOURS,
@@ -293,33 +293,6 @@ def render_risk_legend():
     )
 
 
-def telemetry_figure(df_selected):
-    figure = go.Figure()
-    series = [
-        ("voltage", "Voltaje", "#ffb4ab", "solid", "y"),
-        ("vibration", "Vibración (mm/s)", "#4d8eff", "solid", "y2"),
-        ("pressure", "Presión (bar)", "#a4c9ff", "dash", "y3"),
-    ]
-    for column, label, color, dash, axis in series:
-        figure.add_trace(go.Scatter(
-            x=df_selected["timestamp"], y=df_selected[column], name=label,
-            mode="lines", line={"color": color, "width": 2, "dash": dash}, yaxis=axis,
-        ))
-    latest_time = df_selected["timestamp"].max()
-    start_time = df_selected["timestamp"].quantile(.82)
-    figure.add_vrect(x0=start_time, x1=latest_time, fillcolor="#93000a", opacity=.13, line_width=0)
-    figure.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#060e20", height=360,
-        margin={"l": 12, "r": 62, "t": 32, "b": 35}, hovermode="x unified",
-        font={"family":"JetBrains Mono", "color":"#dae2fd", "size":10},
-        legend={"orientation":"h", "y":1.1, "x":0},
-        xaxis={"gridcolor":"rgba(140,144,159,.12)", "showgrid":True},
-        yaxis={"title":{"text":"Voltaje", "font":{"color":"#ffb4ab"}}, "gridcolor":"rgba(140,144,159,.12)"},
-        yaxis2={"title":{"text":"Vibración", "font":{"color":"#4d8eff"}}, "overlaying":"y", "side":"right", "showgrid":False},
-        yaxis3={"overlaying":"y", "side":"right", "position":.96, "showgrid":False, "showticklabels":False},
-    )
-    return figure
-
 
 def render_replayed_telemetry(chart_placeholder, chart_rows, period):
     """Replace the live plot with the simulator window in the same chart slot."""
@@ -337,28 +310,6 @@ def render_replayed_telemetry(chart_placeholder, chart_rows, period):
             key="telemetry_main_chart",
         )
 
-
-def fft_figure(df_selected):
-    signal = df_selected["vibration"].astype(float).to_numpy()
-    if len(signal) < 4:
-        return go.Figure()
-    spectrum = np.abs(np.fft.rfft(signal - signal.mean()))
-    frequency = np.fft.rfftfreq(len(signal), d=1 / 100)
-    figure = go.Figure(go.Scatter(
-        x=frequency, y=spectrum, mode="lines", line={"color":"#4d8eff", "width":2},
-        fill="tozeroy", fillcolor="rgba(77,142,255,.12)",
-        hovertemplate="Frecuencia: %{x:.0f} Hz<br>Amplitud: %{y:.2f}<extra></extra>",
-    ))
-    peak_index = int(np.argmax(spectrum[1:]) + 1)
-    figure.add_vline(x=float(frequency[peak_index]), line_dash="dash", line_color="#ffb4ab", annotation_text=f"Pico {frequency[peak_index]:.0f} Hz", annotation_font_color="#ffb4ab")
-    figure.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#060e20", height=270,
-        margin={"l":10,"r":15,"t":15,"b":35}, showlegend=False,
-        font={"family":"JetBrains Mono", "color":"#dae2fd", "size":10},
-        xaxis={"title":"Frecuencia (Hz)", "gridcolor":"rgba(140,144,159,.12)", "range":[0, min(500, float(frequency.max()))]},
-        yaxis={"title":"Amplitud", "gridcolor":"rgba(140,144,159,.12)"},
-    )
-    return figure
 
 
 def render_anomaly_heatmap(df_risk, selected_machine):
@@ -798,20 +749,71 @@ if st.session_state.active_section == "anomalies":
             st.success(f"Sin eventos registrados para {format_machine_id(selected_machine)}.")
         else:
             for _, event in selected_errors.iterrows():
-                st.markdown(f"<div class='sidebar-card'><div class='eyebrow'>{html.escape(str(event['timestamp']))} · {html.escape(str(event['error_code']))}</div><div style='color:var(--text);font-size:.78rem;margin-top:.35rem'>{html.escape(str(event['description']))}</div></div>", unsafe_allow_html=True)
+                ec = str(event['error_code']).upper()
+                if "VIB" in ec or "ROT" in ec:
+                    root_cause = "🚨 Root Cause: Resonancia crítica en cojinetes/rodamientos (patrón BPFO)"
+                    rc_color = "#ff5353"
+                elif "VOLT" in ec:
+                    root_cause = "⚡ Root Cause: Fluctuación transitoria en línea de alimentación eléctrica"
+                    rc_color = "#ffb4ab"
+                elif "PRESS" in ec:
+                    root_cause = "💧 Root Cause: Pérdida de presión hidráulica en circuito de retorno"
+                    rc_color = "#a4c9ff"
+                elif "TEMP" in ec:
+                    root_cause = "🔥 Root Cause: Temperatura elevada en bobinado de inducción estatórica"
+                    rc_color = "#ff8a32"
+                else:
+                    root_cause = "🔧 Root Cause: Desgaste general de componentes mecánicos"
+                    rc_color = "#9da6bd"
+                st.markdown(
+                    f"<div class='sidebar-card'>"
+                    f"<div class='eyebrow'>{html.escape(str(event['timestamp'])[:16])} · "
+                    f"<span style='color:{rc_color};font-weight:700'>{html.escape(str(event['error_code']))}</span></div>"
+                    f"<div style='color:var(--text);font-size:.78rem;margin-top:.35rem'>{html.escape(str(event['description']))}</div>"
+                    f"<div style='color:{rc_color};font-size:.68rem;margin-top:.3rem;font-family:JetBrains Mono,monospace'>{root_cause}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
 
 if st.session_state.active_section == "maintenance":
     ordered = df_risk.merge(df_machines[["machine_id", "type", "location", "days_since_maintenance"]], on="machine_id").sort_values("priority_score", ascending=False)
     if not ordered.empty:
-        top = ordered.iloc[0]
-        top_tone = risk_tone(top["risk_level"])
-        top_color = risk_color(top["risk_level"])
-        top_alert_class = "critical" if top_tone == "red" else "moderate" if top_tone == "yellow" else "stable"
-        top_lamp = "critical" if top_tone == "red" else "moderate" if top_tone == "yellow" else ""
-        top_action = "ACCIÓN REQUERIDA" if top_tone == "red" else "REVISIÓN RECOMENDADA" if top_tone == "yellow" else "OPERACIÓN NORMAL"
-        st.markdown(f"<div class='section-head'><div><h2>Plan de mantenimiento</h2><p>Cola priorizada según el estado real de cada activo.</p></div><span class='pill {risk_pill(top['risk_level'])}'>{top_action}</span></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='maintenance-hero {'alert-surface-critical alert-critical-card' if top_tone == 'red' else 'alert-surface-moderate' if top_tone == 'yellow' else ''}' style='--state-color:{top_color}'><div><span class='pill {risk_pill(top['risk_level'])}'><i class='alert-lamp {top_lamp}'></i>{top_action}</span><span class='eyebrow' style='margin-left:.55rem'>PRIORIDAD DE FLOTA</span><h2>{html.escape(format_machine_id(top['machine_id']))} · {html.escape(str(top['risk_level']))}</h2><p>Riesgo estimado: <strong>{top['risk_score']:.0f}%</strong>. Acción sugerida: <strong>{html.escape(str(top['priority']))}</strong>. {int(top['days_since_maintenance'])} días desde el último mantenimiento.</p></div><span class='pill'>LIVE_DEMO</span></div>", unsafe_allow_html=True)
+        # Encabezado de sección
+        st.markdown(
+            "<div class='section-head'><div><h2>Plan de mantenimiento &mdash; Top 3 Prioridades</h2>"
+            "<p>Cola priorizada según riesgo, criticidad e impacto operacional.</p></div></div>",
+            unsafe_allow_html=True,
+        )
+        # Hero Cards: Top 3 máquinas en columnas
+        top_3 = ordered.head(3)
+        hero_cols = st.columns(min(3, len(top_3)), gap="small")
+        for hero_i, (_, top) in enumerate(top_3.iterrows()):
+            t_tone   = risk_tone(top["risk_level"])
+            t_color  = risk_color(top["risk_level"])
+            t_lamp   = "critical" if t_tone == "red" else "moderate" if t_tone == "yellow" else ""
+            t_action = "ACCIÓN REQUERIDA" if t_tone == "red" else "REVISIÓN RECOMENDADA" if t_tone == "yellow" else "OPERACIÓN NORMAL"
+            t_alert  = "alert-surface-critical alert-critical-card" if t_tone == "red" else "alert-surface-moderate" if t_tone == "yellow" else ""
+            t_days   = int(top["days_since_maintenance"])
+            with hero_cols[hero_i]:
+                st.markdown(
+                    f"<div class='maintenance-hero {t_alert}' style='--state-color:{t_color};flex-direction:column;align-items:flex-start;gap:.55rem'>"
+                    f"<div style='width:100%'>"
+                    f"<span class='eyebrow' style='color:{t_color}'>PRIORIDAD #{hero_i + 1}</span>"
+                    f"<h2 style='margin:.3rem 0'>{html.escape(format_machine_id(top['machine_id']))}"
+                    f" &middot; <span style='color:{t_color}'>{html.escape(str(top['risk_level']))}</span></h2>"
+                    f"<p style='margin:0;font-size:.78rem'>{html.escape(str(top['type']))} &middot; {html.escape(str(top['location']))}</p>"
+                    f"<p style='margin:.25rem 0 0;font-size:.78rem'>Riesgo: <strong style='color:{t_color}'>{top['risk_score']:.0f}%</strong>"
+                    f" &middot; Acción: <strong>{html.escape(str(top['priority']))}</strong> &middot; {t_days}d sin mtto.</p>"
+                    f"</div>"
+                    f"<div style='width:100%'><div style='height:5px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden'>"
+                    f"<div style='height:100%;width:{min(top['risk_score'],100):.0f}%;background:{t_color};border-radius:3px'></div>"
+                    f"</div></div>"
+                    f"<span class='pill {risk_pill(top['risk_level'])}'><i class='alert-lamp {t_lamp}'></i>{t_action}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
     else:
+
         st.markdown("<div class='section-head'><div><h2>Plan de mantenimiento</h2><p>Sin activos disponibles para priorizar.</p></div><span class='pill pill-green'>OPERACIÓN NORMAL</span></div>", unsafe_allow_html=True)
     st.markdown("<div class='resource-grid'><div class='resource-card'><div class='resource-icon'>&#128101;</div><div><span>TECNICOS DISPONIBLES</span><strong>3 equipos de guardia</strong><span style='color:var(--green)'>Turno operativo</span></div></div><div class='resource-card'><div class='resource-icon'>&#128230;</div><div><span>REPUESTOS CRITICOS</span><strong>Inventario por conectar</strong><span>Fuente preparada para integración</span></div></div><div class='resource-card'><div class='resource-icon'>&#9201;</div><div><span>MTBF PROYECTADO</span><strong>Modelo en ejecución</strong><span>Calculado al conectar historial</span></div></div></div>", unsafe_allow_html=True)
     st.markdown("<div class='section-head'><div><h2>Cola de intervención priorizada</h2><p>Ordenada por riesgo, criticidad e impacto operacional.</p></div><span class='eyebrow'>ALGORITMO RUL</span></div>", unsafe_allow_html=True)
