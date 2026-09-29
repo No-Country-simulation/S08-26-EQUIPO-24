@@ -696,7 +696,7 @@ if st.session_state.active_section == "telemetry":
                     "<span class='pill pill-red' style='font:600 .68rem JetBrains Mono,monospace'>● EN VIVO</span>",
                     unsafe_allow_html=True,
                 )
-                if st.button("⏸", key="live_pause_btn", help="Pausar simulación en vivo", width="auto"):
+                if st.button("⏸", key="live_pause_btn", help="Pausar simulación en vivo", width="content"):
                     st.session_state["demo_sim_running"] = False
                     st.rerun(scope="app")
             else:
@@ -825,13 +825,11 @@ if st.session_state.active_section == "anomalies":
                         unsafe_allow_html=True,
                     )
 
-    if sim_running:
-        @st.fragment(run_every=0.8)
-        def _live_anomaly_chart():
-            _render_anomaly_charts()
-        _live_anomaly_chart()
-    else:
+    @st.fragment(run_every=0.8 if sim_running else None)
+    def _anomaly_chart_fragment():
         _render_anomaly_charts()
+
+    _anomaly_chart_fragment()
 
 if st.session_state.active_section == "maintenance":
     ordered = df_risk.merge(df_machines[["machine_id", "type", "location", "days_since_maintenance", "operating_hours"]], on="machine_id").sort_values("priority_score", ascending=False)
@@ -879,7 +877,7 @@ if st.session_state.active_section == "maintenance":
                     st.session_state[rkey] = not st.session_state.get(rkey, False)
                 if st.session_state.get(rkey, False):
                     with st.expander(f"📋 Señales — {format_machine_id(top['machine_id'])}", expanded=True):
-                        sig = compute_machine_signals(top["machine_id"], live_df, model, feature_cols, top, top)
+                        sig = compute_machine_signals(top["machine_id"], dashboard_live_df, model, feature_cols, top, top)
                         render_mini_report(sig, df_errors, meta)
     else:
 
@@ -892,23 +890,25 @@ if st.session_state.active_section == "maintenance":
         row_alert_class = "alert-critical-card" if row_tone == "red" else "alert-moderate-card" if row_tone == "yellow" else ""
         row_lamp = "critical" if row_tone == "red" else "moderate" if row_tone == "yellow" else ""
         selected_badge = "<span class='pill'>SELECCIONADA</span>" if str(row["machine_id"]) == str(selected_machine) else ""
-        st.markdown(f"<div class='priority {row_alert_class}' style='border-left-color:{tone}'><div class='priority-title'><span class='rank-badge' style='background:{tone}'>{rank}</span><i class='alert-lamp {row_lamp}'></i>{html.escape(format_machine_id(row['machine_id']))} {selected_badge} — {html.escape(str(row['type']))} <span class='pill {risk_pill(row['risk_level'])}'>{row['risk_score']:.0f}% · {html.escape(str(row['risk_level']).upper())}</span></div><div class='priority-copy'>Acción: {html.escape(str(row['priority']))} · Ubicación: {html.escape(str(row['location']))}</div><div class='priority-meta'><span>Criticidad: {html.escape(str(row['criticality']))}</span><span>{int(row['days_since_maintenance'])} días sin mantenimiento</span><span>Prioridad: {row['priority_score']:.0f}</span></div></div>", unsafe_allow_html=True)
         rkey = f"show_report_{row['machine_id']}"
+        st.markdown(f"<div class='priority {row_alert_class}' style='border-left-color:{tone}'><div class='priority-title'><span class='rank-badge' style='background:{tone}'>{rank}</span><i class='alert-lamp {row_lamp}'></i>{html.escape(format_machine_id(row['machine_id']))} {selected_badge} — {html.escape(str(row['type']))} <span class='pill {risk_pill(row['risk_level'])}'>{row['risk_score']:.0f}% · {html.escape(str(row['risk_level']).upper())}</span></div><div class='priority-copy'>Acción: {html.escape(str(row['priority']))} · Ubicación: {html.escape(str(row['location']))}</div><div class='priority-meta'><span>Criticidad: {html.escape(str(row['criticality']))}</span><span>{int(row['days_since_maintenance'])} días sin mantenimiento</span><span>Prioridad: {row['priority_score']:.0f}</span></div></div>", unsafe_allow_html=True)
         if row_tone in {"red", "yellow"}:
-            action_cols = st.columns([1, 1, 1, 3])
-            with action_cols[0]:
+            btn_cols = st.columns([1, 1, 9, 1])
+            with btn_cols[0]:
                 if st.button("Telemetría", key=f"maintenance_telemetry_{rank}_{row['machine_id']}", width="stretch"):
                     navigate_to_section(row["machine_id"], "telemetry")
-            with action_cols[1]:
+            with btn_cols[1]:
                 if st.button("Diagnóstico", key=f"maintenance_diagnostic_{rank}_{row['machine_id']}", width="stretch"):
                     navigate_to_section(row["machine_id"], "anomalies")
-            with action_cols[2]:
+            with btn_cols[3]:
                 if st.button("📋 Reporte", key=f"maintenance_report_{rank}_{row['machine_id']}", width="stretch"):
                     st.session_state[rkey] = not st.session_state.get(rkey, False)
         else:
-            if st.button("📋 Reporte", key=f"maintenance_report_{rank}_{row['machine_id']}", width="stretch"):
-                st.session_state[rkey] = not st.session_state.get(rkey, False)
+            _, report_col = st.columns([10, 1])
+            with report_col:
+                if st.button("📋 Reporte", key=f"maintenance_report_{rank}_{row['machine_id']}", width="stretch"):
+                    st.session_state[rkey] = not st.session_state.get(rkey, False)
         if st.session_state.get(rkey, False):
             with st.expander(f"📋 Mini-reporte de señales — {format_machine_id(row['machine_id'])}", expanded=True):
-                sig = compute_machine_signals(row["machine_id"], live_df, model, feature_cols, row, row)
+                sig = compute_machine_signals(row["machine_id"], dashboard_live_df, model, feature_cols, row, row)
                 render_mini_report(sig, df_errors, meta)

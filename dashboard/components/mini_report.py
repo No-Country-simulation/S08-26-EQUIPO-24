@@ -3,13 +3,12 @@
 import html
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from components.demo_simulator import FEATURE_LABELS
 from utils.diagnostics import get_action_recommendation, get_root_cause
 
-_TOP_FEATURES = 5
+_TOP_FEATURES = 4
 _SENSOR_FEATURES = ["volt", "rotate", "pressure", "vibration"]
 
 
@@ -170,35 +169,10 @@ def render_mini_report(signals: dict, df_errors: pd.DataFrame, model_meta: dict 
                     f"{value:.2f} {sensor_units.get(sensor, '')}",
                 )
 
-    # ── Top signals (feature importance) ──
+    # ── Top signals ──
     top_signals = signals.get("top_signals", [])
     if top_signals:
         st.markdown("<div class='eyebrow' style='margin:.5rem 0 .2rem'>SEÑALES CLAVE DEL MODELO</div>", unsafe_allow_html=True)
-        chart_df = pd.DataFrame(top_signals)
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            y=chart_df["label"],
-            x=chart_df["importance"],
-            orientation="h",
-            marker_color=color,
-            text=[f"{v:.2f}" for v in chart_df["current_value"]],
-            texttemplate="%{text}",
-            textposition="outside",
-            hovertemplate="<b>%{y}</b><br>Importancia: %{x:.4f}<br>Valor actual: %{text}<extra></extra>",
-            hoverlabel=dict(bgcolor="#1e293b", font_size=12),
-        ))
-        fig.update_layout(
-            height=220,
-            margin=dict(l=0, r=10, t=0, b=0),
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            yaxis=dict(autorange="reversed", tickfont=dict(color="#9da6bd", size=11)),
-            xaxis=dict(visible=False),
-            showlegend=False,
-        )
-        st.plotly_chart(fig, width="stretch")
-
-        # Interpretaciones
         for sig in top_signals:
             st.markdown(
                 f"<div class='sidebar-card' style='padding:.35rem .5rem;font-size:.75rem'>"

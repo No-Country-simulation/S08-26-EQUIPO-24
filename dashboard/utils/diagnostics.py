@@ -4,7 +4,7 @@ ROOT_CAUSE_MAP = [
     (["VIB", "ROT"], "Root Cause: Resonancia crítica en cojinetes/rodamientos (patrón BPFO)", "#ff5353"),
     (["VOLT"], "Root Cause: Fluctuación transitoria en línea de alimentación eléctrica", "#ffb4ab"),
     (["PRESS"], "Root Cause: Pérdida de presión hidráulica en circuito de retorno", "#a4c9ff"),
-    (["TEMP"], "Root Cause: Temperatura elevada en bobinado de inducción estatórica", "#ff8a32"),
+    (["ROT"], "Root Cause: Desbalanceo rotor-coupling — reductor planetario", "#8b5cf6"),
 ]
 
 DEFAULT_ROOT_CAUSE = "Root Cause: Desgaste general de componentes mecánicos"

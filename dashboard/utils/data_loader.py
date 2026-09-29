@@ -280,10 +280,6 @@ def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = Fa
             'description': 'Caída de presión hidráulica en circuito de retorno',
         },
         {
-            'error_code': 'TEMP-004',
-            'description': 'Temperatura elevada en bobinado de inducción estatórica',
-        },
-        {
             'error_code': 'ROT-005',
             'description': 'Desbalanceo en rotor acoplado a reductor planetario',
         },
@@ -353,6 +349,6 @@ def load_mock_data():
     return (
         pd.DataFrame({'machine_id': ['CNC-001', 'CNC-002']}),
         pd.DataFrame({'machine_id': ['CNC-001'], 'risk_score': [50], 'risk_level': ['Moderado'], 'criticality': ['Media'], 'priority_score': [100], 'priority': ['Inspeccionar']}),
-        pd.DataFrame({'machine_id': ['CNC-001'], 'temperature': [70], 'timestamp': [pd.Timestamp('2026-01-01')]}),
+        pd.DataFrame({'machine_id': ['CNC-001'], 'vibration': [0.7], 'timestamp': [pd.Timestamp('2026-01-01')]}),
         pd.DataFrame({'machine_id': ['CNC-001'], 'error_code': ['E100'], 'description': ['Error test']}),
     )
