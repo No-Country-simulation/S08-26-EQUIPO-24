@@ -698,23 +698,7 @@ if st.session_state.active_section == "telemetry":
                 unsafe_allow_html=True,
             )
         with header_cols[1]:
-            if is_simulator_running():
-                st.markdown(
-                    "<span class='alert-lamp critical' style='display:inline-block;width:9px;height:9px;margin-right:.3rem'></span>"
-                    "<span class='pill pill-red' style='font:600 .68rem JetBrains Mono,monospace'>● EN VIVO</span>",
-                    unsafe_allow_html=True,
-                )
-                if st.button("⏸", key="live_pause_btn", help="Pausar simulación en vivo", width="content"):
-                    st.session_state["demo_sim_running"] = False
-                    st.rerun(scope="app")
-            else:
-                st.markdown("<span class='pill'>HISTORICO LIVE_DEMO</span>", unsafe_allow_html=True)
-                if st.button("▶ Modo en vivo", key="live_start_btn", type="primary", help="Iniciar simulación de datos en vivo", width="stretch"):
-                    st.session_state["demo_sim_running"] = True
-                    st.session_state["demo_sim_index"] = 0
-                    st.session_state.pop("demo_sim_datetime", None)
-                    st.session_state[SIM_ALERT_KEY] = {}
-                    st.rerun(scope="app")
+            st.empty()
         df_live_selected = df_telemetry[
             df_telemetry["machine_id"] == selected_machine
         ].sort_values("timestamp")
