@@ -391,9 +391,11 @@ def render_demo_simulator(
                             if st.button("Ver en matriz", key=f"sim_matrix_{alert['machine_id']}", width="stretch"):
                                 navigate_to_diagnostic_matrix(alert["machine_id"])
 
+        # El gráfico de telemetría se renderiza en el fragmento global
+        # _live_telemetry_fragment(); este panel solo entrega controles y alertas.
         chart_rows = _telemetry_window(live_df, machine_id, current_time).copy()
-        chart_rows = chart_rows.rename(columns={"datetime": "timestamp", "volt": "voltage"})
-        render_chart(chart_rows)
+        if render_chart is not None:
+            render_chart(chart_rows)
 
         # Barra de progreso del lote reproducido
         progress_val = (st.session_state[SIM_INDEX_KEY] + 1) / max(len(timeline), 1)

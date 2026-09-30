@@ -309,22 +309,42 @@ def render_risk_legend():
 
 
 
-def render_replayed_telemetry(chart_placeholder, chart_rows, period):
-    """Replace the live plot with the simulator window in the same chart slot."""
-    chart_placeholder.empty()
-    with chart_placeholder.container():
-        st.markdown(
-            f"<div class='chart-label'><span>TELEMETRÍA REPRODUCIDA</span>"
-            f"<span class='eyebrow'>VENTANA {html.escape(str(period))}</span></div>",
-            unsafe_allow_html=True,
-        )
-        st.plotly_chart(
-            telemetry_figure(chart_rows),
-            width="stretch",
-            config={"displayModeBar": False},
-            key="telemetry_main_chart",
-        )
+def render_live_telemetry_chart(df_chart, period, is_live):
+    """Render the single telemetry chart and its trend metrics.
 
+    ``df_chart`` must already be trimmed to the requested window and use the
+    component schema (timestamp, voltage, vibration, pressure).  The Plotly
+    ``key`` is stable, so repeated calls inside a fragment update the figure
+    in place instead of recreating it.
+    """
+    if df_chart.empty:
+        st.info("⏳ Esperando lecturas para la ventana temporal seleccionada...")
+        return
+
+    st.markdown(
+        f"<div class='chart-label'><span>TELEMETRÍA EN VIVO</span>"
+        f"<span class='eyebrow'>{'REPRODUCIENDO · ' if is_live else 'HISTÓRICO · '}VENTANA {html.escape(str(period))}</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(
+        telemetry_figure(df_chart),
+        width="stretch",
+        config={"displayModeBar": False},
+        key="live_telemetry_main_chart",
+    )
+
+    latest = df_chart.iloc[-1]
+    previous = df_chart.iloc[-2] if len(df_chart) > 1 else latest
+    metric_cols = st.columns(3)
+    with metric_cols[0]:
+        delta = float(latest["voltage"] - previous["voltage"])
+        st.metric("Voltaje", f"{latest['voltage']:.2f} V", f"{delta:+.2f} V")
+    with metric_cols[1]:
+        delta = float(latest["vibration"] - previous["vibration"])
+        st.metric("Vibración", f"{latest['vibration']:.2f} mm/s", f"{delta:+.2f} mm/s", delta_color="inverse")
+    with metric_cols[2]:
+        delta = float(latest["pressure"] - previous["pressure"])
+        st.metric("Presión", f"{latest['pressure']:.2f} bar", f"{delta:+.2f} bar", delta_color="inverse")
 
 
 def render_anomaly_heatmap(df_risk, selected_machine):
@@ -537,6 +557,28 @@ def _global_sim_loop():
 
 _global_sim_loop()
 
+
+# ── Live telemetry fragment ──────────────────────────────────────────────────
+# Single source of truth for the telemetry chart.  It lives at module level so
+# Streamlit registers it once, and it re-renders on its own every 0.8 s so the
+# chart stays dynamic whether the simulator is stopped (historical window) or
+# running (window truncated to the current replay timestamp).
+@st.fragment(run_every=0.8)
+def _live_telemetry_fragment():
+    period = st.session_state.get("demo_sim_period", "24H")
+    period_rows = PERIOD_HOURS.get(period, 24)
+    sim_running = is_simulator_running()
+    sim_time = get_current_sim_time()
+
+    machine_rows = live_df[live_df["machine_id"].astype(str) == str(selected_machine)]
+    if sim_running and sim_time is not None:
+        machine_rows = machine_rows[machine_rows["datetime"] <= pd.Timestamp(sim_time)]
+
+    chart_rows = machine_rows.sort_values("datetime").tail(period_rows).rename(
+        columns={"datetime": "timestamp", "volt": "voltage"},
+    )
+    render_live_telemetry_chart(chart_rows, period, sim_running)
+
 selected_machine, selected_status, selected_criticality = render_sidebar(df_machines, df_risk, data_source, model_source, feature_cols)
 st.markdown("<div class='topbar'><div><span class='brand'>&#128295; Mantenimiento predictivo</span><div class='eyebrow'>S08-26-EQUIPO-24 · DESCUBRIMIENTO / MVP · <span style='color:var(--green)'><span class='status-dot'></span>DEMO ACTIVA</span></div></div><div class='mono' style='color:var(--muted);font-size:.7rem'>Streamlit Core 1.63</div></div>", unsafe_allow_html=True)
 st.markdown("<div class='banner'><div><div class='banner-title'>Monitor Diagnóstico Industrial <span class='pill'>PLANTA-SUR // LÍNEA-A</span></div><div class='banner-copy'>Análisis predictivo multivariante sobre el conjunto de datos de demostración.</div></div><div class='pill'><span class='status-dot'></span>FUENTE: LIVE_DEMO</div></div>", unsafe_allow_html=True)
@@ -694,49 +736,18 @@ if st.session_state.active_section == "telemetry":
         with header_cols[0]:
             st.markdown(
                 f"<div class='section-head'><div><h2>Telemetr\u00eda en Vivo \u00b7 {format_machine_id(selected_machine)}</h2>"
-                "<p>Vista historica de las lecturas disponibles para el activo seleccionado.</p></div>",
+                "<p>Ventana hist\u00f3rica del activo; al iniciar el simulador avanza con el reloj de reproducci\u00f3n.</p></div>",
                 unsafe_allow_html=True,
             )
         with header_cols[1]:
             st.empty()
-        df_live_selected = df_telemetry[
-            df_telemetry["machine_id"] == selected_machine
-        ].sort_values("timestamp")
-        chart_placeholder = st.empty()
-        if not df_live_selected.empty:
-            simulation_time = st.session_state.get("demo_sim_datetime")
-            if simulation_time is None:
-                selected_period = st.session_state.get("demo_sim_period", "24H")
-                live_chart_rows = df_live_selected.tail(PERIOD_HOURS.get(selected_period, 24))
-                st.markdown(
-                    "<div class='chart-label'><span>TELEMETRÍA EN VIVO</span>"
-                    "<span class='eyebrow'>ÚLTIMAS LECTURAS HISTÓRICAS</span></div>",
-                    unsafe_allow_html=True,
-                )
-                chart_placeholder.plotly_chart(
-                    telemetry_figure(live_chart_rows),
-                    width="stretch",
-                    config={"displayModeBar": False},
-                    key="telemetry_main_chart",
-                )
-            render_machine_detail(df_errors, selected_machine)
-
-            latest = df_live_selected.iloc[-1]
-            previous = df_live_selected.iloc[-2] if len(df_live_selected) > 1 else latest
-            metric_cols = st.columns(3)
-            with metric_cols[0]:
-                st.metric("Voltaje", f"{latest['voltage']:.2f} V", f"{latest['voltage'] - previous['voltage']:+.2f} V")
-            with metric_cols[1]:
-                st.metric("Vibracion", f"{latest['vibration']:.2f} mm/s", f"{latest['vibration'] - previous['vibration']:+.2f} mm/s", delta_color="inverse")
-            with metric_cols[2]:
-                st.metric("Presion", f"{latest['pressure']:.2f} bar", f"{latest['pressure'] - previous['pressure']:+.2f} bar", delta_color="inverse")
-        else:
-            st.info(f"No hay lecturas historicas para {selected_machine}.")
+        _live_telemetry_fragment()
+        render_machine_detail(df_errors, selected_machine)
 
     with st.container(border=True, key="demo_telemetry_section"):
         st.markdown(
-            "<div class='section-head'><div><h2>Telemetria de Demostracion</h2>"
-            "<p>Reproduccion horaria del conjunto procesado y prediccion del riesgo con el modelo.</p></div>"
+            "<div class='section-head'><div><h2>Simulador de Reproducci\u00f3n</h2>"
+            "<p>Controles de reproducci\u00f3n horaria y alertas del modelo sobre el gr\u00e1fico anterior.</p></div>"
             "<span class='pill'>SIMULADOR</span></div>",
             unsafe_allow_html=True,
         )
@@ -746,9 +757,7 @@ if st.session_state.active_section == "telemetry":
             model,
             feature_cols,
             meta.get("decision_threshold", 0.5),
-            lambda chart_rows: render_replayed_telemetry(
-                chart_placeholder, chart_rows, st.session_state.get("demo_sim_period", "24H")
-            ),
+            None,
         )
 
 if st.session_state.active_section == "anomalies":
@@ -776,6 +785,8 @@ if st.session_state.active_section == "anomalies":
         render_anomaly_heatmap(df_risk, selected_machine)
     sim_running = is_simulator_running()
 
+    # FIX: Eliminamos @st.fragment de aquí. El motor global _global_sim_loop 
+    # ya avanza el reloj y fuerza el rerun, evitando errores de Streamlit al cambiar de pestaña.
     def _render_anomaly_charts():
         sim_time = get_current_sim_time()
         if sim_running and sim_time is not None and not anomaly_telemetry.empty:
@@ -786,10 +797,20 @@ if st.session_state.active_section == "anomalies":
         fft_col, events_col = st.columns([7, 5])
         with fft_col:
             st.markdown("<div class='section-head'><div><h3>Espectro de frecuencia vibracional (FFT)</h3><p>Acelerómetro triaxial · Eje de vibración de la máquina seleccionada.</p></div><span class='pill'>BPFO ANALYSIS</span></div>", unsafe_allow_html=True)
+            
+            # MEJORA DINÁMICA: Usamos st.empty() para que el gráfico FFT se actualice 
+            # in-place cada 0.8s sin parpadear (flickering) y sin perder el zoom/paneo del usuario.
+            fft_chart_placeholder = st.empty()
             if not fft_data.empty:
-                st.plotly_chart(fft_figure(fft_data), width="stretch", config={"displayModeBar": False})
+                fft_chart_placeholder.plotly_chart(
+                    fft_figure(fft_data), 
+                    width="stretch", 
+                    config={"displayModeBar": False},
+                    key="fft_main_chart"
+                )
             else:
-                st.info("No hay datos de FFT disponibles en esta ventana.")
+                fft_chart_placeholder.info("No hay datos de FFT disponibles en esta ventana.")
+                
         with events_col:
             st.markdown("<div class='section-head'><div><h3>Registro crítico de eventos</h3><p>Últimas señales y diagnósticos del activo.</p></div></div>", unsafe_allow_html=True)
             if sim_time is not None:
@@ -817,11 +838,8 @@ if st.session_state.active_section == "anomalies":
                         unsafe_allow_html=True,
                     )
 
-    @st.fragment(run_every=0.8 if sim_running else None)
-    def _anomaly_chart_fragment():
-        _render_anomaly_charts()
-
-    _anomaly_chart_fragment()
+    # Llamada directa y limpia (sin decorador de fragmento anidado)
+    _render_anomaly_charts()
 
 if st.session_state.active_section == "maintenance":
     ordered = df_risk.merge(df_machines[["machine_id", "type", "location", "days_since_maintenance", "operating_hours"]], on="machine_id").sort_values("priority_score", ascending=False)
