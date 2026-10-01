@@ -6,16 +6,23 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from components.machine_detail import format_machine_id, navigate_to_section, render_machine_detail
-from components.sensor_chart import render_sensor_chart
+from components.sensor_chart import render_sensor_chart, telemetry_figure, fft_figure
 from components.risk_table import render_risk_table
 from components.demo_simulator import (
     PERIOD_HOURS,
+    SIM_ALERT_KEY,
     render_demo_simulator,
     reset_simulation_state,
     simulation_snapshot,
+    simulation_tick,
+    is_simulator_running,
+    get_current_sim_time,
+    get_current_sim_frame,
 )
+from components.mini_report import compute_machine_signals, render_mini_report
 from utils.data_loader import compute_risk_from_model, get_priority_machine, load_live_demo_data
 from utils.model_loader import get_model
+from utils.diagnostics import get_root_cause
 
 
 st.set_page_config(
@@ -207,6 +214,14 @@ st.markdown(
     [class*='st-key-fleet_priority_card'] button,[class*='st-key-sidebar_fleet_alert'] button,[class*='st-key-selected_asset_card'] button,[class*='st-key-recommended_actions_card'] button,[class*='st-key-kpi_card_'] button,[class*='st-key-heatmap_diagnostic_'] button,[class*='st-key-matrix_telemetry_'] button,[class*='st-key-matrix_diagnostic_'] button,[class*='st-key-maintenance_telemetry_'] button,[class*='st-key-maintenance_diagnostic_'] button { box-sizing:border-box; border-radius:7px; line-height:1.25; }
     [class*='st-key-fleet_priority_card'] button > div,[class*='st-key-sidebar_fleet_alert'] button > div,[class*='st-key-selected_asset_card'] button > div,[class*='st-key-recommended_actions_card'] button > div,[class*='st-key-kpi_card_'] button > div { display:flex!important; flex-direction:column!important; align-items:flex-start!important; justify-content:flex-start!important; align-self:stretch!important; width:100%!important; min-width:0!important; margin:0!important; text-align:left!important; }
     [class*='st-key-heatmap_diagnostic_'] button:hover,[class*='st-key-matrix_telemetry_'] button:hover,[class*='st-key-matrix_diagnostic_'] button:hover,[class*='st-key-maintenance_telemetry_'] button:hover,[class*='st-key-maintenance_diagnostic_'] button:hover { border-color:var(--blue); background:rgba(77,142,255,.18); color:var(--text); }
+    [class*='st-key-maintenance_record_'] { box-sizing:border-box; padding:.55rem .65rem!important; border-radius:7px!important; background:linear-gradient(150deg,rgba(23,31,51,.9),rgba(17,26,45,.88))!important; }
+    [class*='st-key-maintenance_record_red'] { border-color:rgba(255,83,83,.58)!important; border-left:3px solid #ff5353!important; background:linear-gradient(145deg,rgba(111,24,34,.42),rgba(34,31,45,.88))!important; animation:alert-card-pulse 2.2s ease-in-out infinite; }
+    [class*='st-key-maintenance_record_yellow'] { border-color:rgba(255,138,50,.52)!important; border-left:3px solid #ff8a32!important; background:linear-gradient(145deg,rgba(112,62,20,.34),rgba(34,37,48,.88))!important; }
+    [class*='st-key-maintenance_record_green'] { border-left:3px solid #54e18c!important; }
+    .priority-details { min-width:0; padding:.05rem .2rem; }
+    .priority-details .priority-title { flex-wrap:wrap; gap:.35rem .55rem; }
+    .priority-details .priority-copy { margin-top:.22rem; font-size:.72rem; line-height:1.25; }
+    .priority-details .priority-meta { gap:.3rem .65rem; margin-top:.32rem; }
     @media (max-width:900px) { .ai-diagnostic-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .ai-result-card:last-child { grid-column:1/-1; } }
     @media (max-width:600px) { .ai-diagnostic-grid { grid-template-columns:1fr; } .ai-result-card:last-child { grid-column:auto; } }
     @media (max-width:800px) { [data-testid="stMainBlockContainer"] { padding:.75rem 1rem 1.5rem; } .banner { align-items:flex-start; flex-direction:column; } .risk-legend { justify-content:flex-start; flex-wrap:wrap; } [class*='st-key-kpi_card_'] button { min-height:5.5rem; padding:.45rem; } .telemetry-head { align-items:flex-start; flex-direction:column; } .anomaly-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .resource-grid { grid-template-columns:1fr; } .maintenance-hero { align-items:flex-start; flex-direction:column; } .topbar > div:last-child { display:none; } }
@@ -293,72 +308,43 @@ def render_risk_legend():
     )
 
 
-def telemetry_figure(df_selected):
-    figure = go.Figure()
-    series = [
-        ("voltage", "Voltaje", "#ffb4ab", "solid", "y"),
-        ("vibration", "Vibración (mm/s)", "#4d8eff", "solid", "y2"),
-        ("pressure", "Presión (bar)", "#a4c9ff", "dash", "y3"),
-    ]
-    for column, label, color, dash, axis in series:
-        figure.add_trace(go.Scatter(
-            x=df_selected["timestamp"], y=df_selected[column], name=label,
-            mode="lines", line={"color": color, "width": 2, "dash": dash}, yaxis=axis,
-        ))
-    latest_time = df_selected["timestamp"].max()
-    start_time = df_selected["timestamp"].quantile(.82)
-    figure.add_vrect(x0=start_time, x1=latest_time, fillcolor="#93000a", opacity=.13, line_width=0)
-    figure.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#060e20", height=360,
-        margin={"l": 12, "r": 62, "t": 32, "b": 35}, hovermode="x unified",
-        font={"family":"JetBrains Mono", "color":"#dae2fd", "size":10},
-        legend={"orientation":"h", "y":1.1, "x":0},
-        xaxis={"gridcolor":"rgba(140,144,159,.12)", "showgrid":True},
-        yaxis={"title":{"text":"Voltaje", "font":{"color":"#ffb4ab"}}, "gridcolor":"rgba(140,144,159,.12)"},
-        yaxis2={"title":{"text":"Vibración", "font":{"color":"#4d8eff"}}, "overlaying":"y", "side":"right", "showgrid":False},
-        yaxis3={"overlaying":"y", "side":"right", "position":.96, "showgrid":False, "showticklabels":False},
+
+def render_live_telemetry_chart(df_chart, period, is_live):
+    """Render the single telemetry chart and its trend metrics.
+
+    ``df_chart`` must already be trimmed to the requested window and use the
+    component schema (timestamp, voltage, vibration, pressure).  The Plotly
+    ``key`` is stable, so repeated calls inside a fragment update the figure
+    in place instead of recreating it.
+    """
+    if df_chart.empty:
+        st.info("⏳ Esperando lecturas para la ventana temporal seleccionada...")
+        return
+
+    st.markdown(
+        f"<div class='chart-label'><span>TELEMETRÍA EN VIVO</span>"
+        f"<span class='eyebrow'>{'REPRODUCIENDO · ' if is_live else 'HISTÓRICO · '}VENTANA {html.escape(str(period))}</span></div>",
+        unsafe_allow_html=True,
     )
-    return figure
-
-
-def render_replayed_telemetry(chart_placeholder, chart_rows, period):
-    """Replace the live plot with the simulator window in the same chart slot."""
-    chart_placeholder.empty()
-    with chart_placeholder.container():
-        st.markdown(
-            f"<div class='chart-label'><span>TELEMETRÍA REPRODUCIDA</span>"
-            f"<span class='eyebrow'>VENTANA {html.escape(str(period))}</span></div>",
-            unsafe_allow_html=True,
-        )
-        st.plotly_chart(
-            telemetry_figure(chart_rows),
-            width="stretch",
-            config={"displayModeBar": False},
-            key="telemetry_main_chart",
-        )
-
-
-def fft_figure(df_selected):
-    signal = df_selected["vibration"].astype(float).to_numpy()
-    if len(signal) < 4:
-        return go.Figure()
-    spectrum = np.abs(np.fft.rfft(signal - signal.mean()))
-    frequency = np.fft.rfftfreq(len(signal), d=1 / 100)
-    figure = go.Figure(go.Scatter(
-        x=frequency, y=spectrum, mode="lines", line={"color":"#4d8eff", "width":2},
-        fill="tozeroy", fillcolor="rgba(77,142,255,.12)",
-        hovertemplate="Frecuencia: %{x:.0f} Hz<br>Amplitud: %{y:.2f}<extra></extra>",
-    ))
-    peak_index = int(np.argmax(spectrum[1:]) + 1)
-    figure.add_vline(x=float(frequency[peak_index]), line_dash="dash", line_color="#ffb4ab", annotation_text=f"Pico {frequency[peak_index]:.0f} Hz", annotation_font_color="#ffb4ab")
-    figure.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="#060e20", height=270,
-        margin={"l":10,"r":15,"t":15,"b":35}, showlegend=False,
-        font={"family":"JetBrains Mono", "color":"#dae2fd", "size":10},
-        xaxis={"title":"Frecuencia (Hz)", "gridcolor":"rgba(140,144,159,.12)", "range":[0, min(500, float(frequency.max()))]},
-        yaxis={"title":"Amplitud", "gridcolor":"rgba(140,144,159,.12)"},
+    st.plotly_chart(
+        telemetry_figure(df_chart),
+        width="stretch",
+        config={"displayModeBar": False},
+        key="live_telemetry_main_chart",
     )
-    return figure
+
+    latest = df_chart.iloc[-1]
+    previous = df_chart.iloc[-2] if len(df_chart) > 1 else latest
+    metric_cols = st.columns(3)
+    with metric_cols[0]:
+        delta = float(latest["voltage"] - previous["voltage"])
+        st.metric("Voltaje", f"{latest['voltage']:.2f} V", f"{delta:+.2f} V")
+    with metric_cols[1]:
+        delta = float(latest["vibration"] - previous["vibration"])
+        st.metric("Vibración", f"{latest['vibration']:.2f} mm/s", f"{delta:+.2f} mm/s", delta_color="inverse")
+    with metric_cols[2]:
+        delta = float(latest["pressure"] - previous["pressure"])
+        st.metric("Presión", f"{latest['pressure']:.2f} bar", f"{delta:+.2f} bar", delta_color="inverse")
 
 
 def render_anomaly_heatmap(df_risk, selected_machine):
@@ -558,6 +544,41 @@ except Exception as error:
     st.error(f"Error al cargar datos o modelo: {error}")
     st.stop()
 
+# ── Global simulation loop ─────────────────────────────────────────────────
+# Advances the replay clock on every section so telemetry and diagnosis
+# charts animate continuously in "live mode".  The panel only renders UI.
+@st.fragment(run_every=0.8)
+def _global_sim_loop():
+    if is_simulator_running():
+        simulation_tick(
+            live_df, model, feature_cols,
+            meta.get("decision_threshold", 0.5),
+        )
+
+_global_sim_loop()
+
+
+# ── Live telemetry fragment ──────────────────────────────────────────────────
+# Single source of truth for the telemetry chart.  It lives at module level so
+# Streamlit registers it once, and it re-renders on its own every 0.8 s so the
+# chart stays dynamic whether the simulator is stopped (historical window) or
+# running (window truncated to the current replay timestamp).
+@st.fragment(run_every=0.8)
+def _live_telemetry_fragment():
+    period = st.session_state.get("demo_sim_period", "24H")
+    period_rows = PERIOD_HOURS.get(period, 24)
+    sim_running = is_simulator_running()
+    sim_time = get_current_sim_time()
+
+    machine_rows = live_df[live_df["machine_id"].astype(str) == str(selected_machine)]
+    if sim_running and sim_time is not None:
+        machine_rows = machine_rows[machine_rows["datetime"] <= pd.Timestamp(sim_time)]
+
+    chart_rows = machine_rows.sort_values("datetime").tail(period_rows).rename(
+        columns={"datetime": "timestamp", "volt": "voltage"},
+    )
+    render_live_telemetry_chart(chart_rows, period, sim_running)
+
 selected_machine, selected_status, selected_criticality = render_sidebar(df_machines, df_risk, data_source, model_source, feature_cols)
 st.markdown("<div class='topbar'><div><span class='brand'>&#128295; Mantenimiento predictivo</span><div class='eyebrow'>S08-26-EQUIPO-24 · DESCUBRIMIENTO / MVP · <span style='color:var(--green)'><span class='status-dot'></span>DEMO ACTIVA</span></div></div><div class='mono' style='color:var(--muted);font-size:.7rem'>Streamlit Core 1.63</div></div>", unsafe_allow_html=True)
 st.markdown("<div class='banner'><div><div class='banner-title'>Monitor Diagnóstico Industrial <span class='pill'>PLANTA-SUR // LÍNEA-A</span></div><div class='banner-copy'>Análisis predictivo multivariante sobre el conjunto de datos de demostración.</div></div><div class='pill'><span class='status-dot'></span>FUENTE: LIVE_DEMO</div></div>", unsafe_allow_html=True)
@@ -711,50 +732,22 @@ if st.session_state.active_section == "overview":
 
 if st.session_state.active_section == "telemetry":
     with st.container(border=True, key="live_telemetry_panel"):
-        st.markdown(
-            f"<div class='section-head'><div><h2>Telemetr\u00eda en Vivo \u00b7 {format_machine_id(selected_machine)}</h2>"
-            "<p>Vista historica de las lecturas disponibles para el activo seleccionado.</p></div>"
-            "<span class='pill'>HISTORICO LIVE_DEMO</span></div>",
-            unsafe_allow_html=True,
-        )
-        df_live_selected = df_telemetry[
-            df_telemetry["machine_id"] == selected_machine
-        ].sort_values("timestamp")
-        chart_placeholder = st.empty()
-        if not df_live_selected.empty:
-            simulation_time = st.session_state.get("demo_sim_datetime")
-            if simulation_time is None:
-                selected_period = st.session_state.get("demo_sim_period", "24H")
-                live_chart_rows = df_live_selected.tail(PERIOD_HOURS.get(selected_period, 24))
-                st.markdown(
-                    "<div class='chart-label'><span>TELEMETRÍA EN VIVO</span>"
-                    "<span class='eyebrow'>ÚLTIMAS LECTURAS HISTÓRICAS</span></div>",
-                    unsafe_allow_html=True,
-                )
-                chart_placeholder.plotly_chart(
-                    telemetry_figure(live_chart_rows),
-                    width="stretch",
-                    config={"displayModeBar": False},
-                    key="telemetry_main_chart",
-                )
-            render_machine_detail(df_errors, selected_machine)
-
-            latest = df_live_selected.iloc[-1]
-            previous = df_live_selected.iloc[-2] if len(df_live_selected) > 1 else latest
-            metric_cols = st.columns(3)
-            with metric_cols[0]:
-                st.metric("Voltaje", f"{latest['voltage']:.2f} V", f"{latest['voltage'] - previous['voltage']:+.2f} V")
-            with metric_cols[1]:
-                st.metric("Vibracion", f"{latest['vibration']:.2f} mm/s", f"{latest['vibration'] - previous['vibration']:+.2f} mm/s", delta_color="inverse")
-            with metric_cols[2]:
-                st.metric("Presion", f"{latest['pressure']:.2f} bar", f"{latest['pressure'] - previous['pressure']:+.2f} bar", delta_color="inverse")
-        else:
-            st.info(f"No hay lecturas historicas para {selected_machine}.")
+        header_cols = st.columns([1, 1], vertical_alignment="center")
+        with header_cols[0]:
+            st.markdown(
+                f"<div class='section-head'><div><h2>Telemetr\u00eda en Vivo \u00b7 {format_machine_id(selected_machine)}</h2>"
+                "<p>Ventana hist\u00f3rica del activo; al iniciar el simulador avanza con el reloj de reproducci\u00f3n.</p></div>",
+                unsafe_allow_html=True,
+            )
+        with header_cols[1]:
+            st.empty()
+        _live_telemetry_fragment()
+        render_machine_detail(df_errors, selected_machine)
 
     with st.container(border=True, key="demo_telemetry_section"):
         st.markdown(
-            "<div class='section-head'><div><h2>Telemetria de Demostracion</h2>"
-            "<p>Reproduccion horaria del conjunto procesado y prediccion del riesgo con el modelo.</p></div>"
+            "<div class='section-head'><div><h2>Simulador de Reproducci\u00f3n</h2>"
+            "<p>Controles de reproducci\u00f3n horaria y alertas del modelo sobre el gr\u00e1fico anterior.</p></div>"
             "<span class='pill'>SIMULADOR</span></div>",
             unsafe_allow_html=True,
         )
@@ -764,9 +757,7 @@ if st.session_state.active_section == "telemetry":
             model,
             feature_cols,
             meta.get("decision_threshold", 0.5),
-            lambda chart_rows: render_replayed_telemetry(
-                chart_placeholder, chart_rows, st.session_state.get("demo_sim_period", "24H")
-            ),
+            None,
         )
 
 if st.session_state.active_section == "anomalies":
@@ -774,7 +765,13 @@ if st.session_state.active_section == "anomalies":
     selected_tone = risk_tone(selected_risk["risk_level"])
     selected_alert_class = "critical" if selected_tone == "red" else "moderate" if selected_tone == "yellow" else "stable"
     selected_lamp = "critical" if selected_tone == "red" else "moderate" if selected_tone == "yellow" else ""
-    st.markdown(f"<div class='telemetry-head {'alert-surface-critical alert-critical-card' if selected_tone == 'red' else 'alert-surface-moderate' if selected_tone == 'yellow' else ''}'><div><span class='machine-tag' style='color:{risk_color(selected_risk['risk_level'])}'>&#128269;</span><div><h2>Diagn\u00f3stico de {html.escape(format_machine_id(selected_machine))}</h2><p>Modelado FFT y clasificaci\u00f3n de anomal\u00edas sobre el activo seleccionado.</p></div></div><span class='pill {risk_pill(selected_risk['risk_level'])}'><i class='alert-lamp {selected_lamp}'></i>{html.escape(str(selected_risk['risk_level']).upper())}</span></div>", unsafe_allow_html=True)
+    sim_running = is_simulator_running()
+    _sim_indicator = (
+        "<span class='pill pill-red' style='margin-left:.5rem;font:600 .68rem JetBrains Mono,monospace'>"
+        "<i class='alert-lamp critical'></i>\u25cf EN VIVO</span>"
+        if sim_running else ""
+    )
+    st.markdown(f"<div class='telemetry-head {'alert-surface-critical alert-critical-card' if selected_tone == 'red' else 'alert-surface-moderate' if selected_tone == 'yellow' else ''}'><div><span class='machine-tag' style='color:{risk_color(selected_risk['risk_level'])}'>&#128269;</span><div><h2>Diagn\u00f3stico de {html.escape(format_machine_id(selected_machine))}</h2><p>Modelado FFT y clasificaci\u00f3n de anomal\u00edas sobre el activo seleccionado.</p></div></div><span class='pill {risk_pill(selected_risk['risk_level'])}'><i class='alert-lamp {selected_lamp}'></i>{html.escape(str(selected_risk['risk_level']).upper())}</span>{_sim_indicator}</div>", unsafe_allow_html=True)
     anomaly_col, heat_col = st.columns([1, 2])
     with anomaly_col:
         confidence = float(selected_risk["risk_score"])
@@ -786,47 +783,139 @@ if st.session_state.active_section == "anomalies":
     with heat_col:
         st.markdown("<div class='section-head'><div><h3>Mapa de estado por activo</h3><p>Vista preparada para conectar subsistemas y sensores reales.</p></div></div>", unsafe_allow_html=True)
         render_anomaly_heatmap(df_risk, selected_machine)
-    fft_col, events_col = st.columns([7, 5])
-    with fft_col:
-        st.markdown("<div class='section-head'><div><h3>Espectro de frecuencia vibracional (FFT)</h3><p>Acelerómetro triaxial · Eje de vibración de la máquina seleccionada.</p></div><span class='pill'>BPFO ANALYSIS</span></div>", unsafe_allow_html=True)
-        if not anomaly_telemetry.empty:
-            st.plotly_chart(fft_figure(anomaly_telemetry), width="stretch", config={"displayModeBar": False})
-    with events_col:
-        st.markdown("<div class='section-head'><div><h3>Registro crítico de eventos</h3><p>Últimas señales y diagnósticos del activo.</p></div></div>", unsafe_allow_html=True)
-        selected_errors = df_errors[df_errors["machine_id"] == selected_machine].sort_values("timestamp", ascending=False).head(3)
-        if selected_errors.empty:
-            st.success(f"Sin eventos registrados para {format_machine_id(selected_machine)}.")
+    sim_running = is_simulator_running()
+
+    # FIX: Eliminamos @st.fragment de aquí. El motor global _global_sim_loop 
+    # ya avanza el reloj y fuerza el rerun, evitando errores de Streamlit al cambiar de pestaña.
+    def _render_anomaly_charts():
+        sim_time = get_current_sim_time()
+        if sim_running and sim_time is not None and not anomaly_telemetry.empty:
+            fft_data = anomaly_telemetry[anomaly_telemetry["timestamp"] <= pd.Timestamp(sim_time)].tail(50)
         else:
-            for _, event in selected_errors.iterrows():
-                st.markdown(f"<div class='sidebar-card'><div class='eyebrow'>{html.escape(str(event['timestamp']))} · {html.escape(str(event['error_code']))}</div><div style='color:var(--text);font-size:.78rem;margin-top:.35rem'>{html.escape(str(event['description']))}</div></div>", unsafe_allow_html=True)
+            fft_data = anomaly_telemetry
+
+        fft_col, events_col = st.columns([7, 5])
+        with fft_col:
+            st.markdown("<div class='section-head'><div><h3>Espectro de frecuencia vibracional (FFT)</h3><p>Acelerómetro triaxial · Eje de vibración de la máquina seleccionada.</p></div><span class='pill'>BPFO ANALYSIS</span></div>", unsafe_allow_html=True)
+            
+            # MEJORA DINÁMICA: Usamos st.empty() para que el gráfico FFT se actualice 
+            # in-place cada 0.8s sin parpadear (flickering) y sin perder el zoom/paneo del usuario.
+            fft_chart_placeholder = st.empty()
+            if not fft_data.empty:
+                fft_chart_placeholder.plotly_chart(
+                    fft_figure(fft_data), 
+                    width="stretch", 
+                    config={"displayModeBar": False},
+                    key="fft_main_chart"
+                )
+            else:
+                fft_chart_placeholder.info("No hay datos de FFT disponibles en esta ventana.")
+                
+        with events_col:
+            st.markdown("<div class='section-head'><div><h3>Registro crítico de eventos</h3><p>Últimas señales y diagnósticos del activo.</p></div></div>", unsafe_allow_html=True)
+            if sim_time is not None:
+                event_cutoff = df_errors["timestamp"] <= pd.Timestamp(sim_time)
+                event_errors = df_errors[event_cutoff]
+            else:
+                event_errors = df_errors
+            selected_errors = event_errors[event_errors["machine_id"] == selected_machine].sort_values("timestamp", ascending=False).head(3)
+            if selected_errors.empty:
+                st.success(f"Sin eventos registrados para {format_machine_id(selected_machine)}.")
+            else:
+                for _, event in selected_errors.iterrows():
+                    root_cause, rc_color = get_root_cause(event["error_code"])
+                    esc_ts = html.escape(str(event['timestamp'])[:16])
+                    esc_ec = html.escape(str(event['error_code']))
+                    esc_desc = html.escape(str(event['description']))
+                    esc_rc = html.escape(root_cause)
+                    st.markdown(
+                        f"<div class='sidebar-card'>"
+                        f"<div class='eyebrow'>{esc_ts} · "
+                        f"<span style='color:{rc_color};font-weight:700'>{esc_ec}</span></div>"
+                        f"<div style='color:var(--text);font-size:.78rem;margin-top:.35rem'>{esc_desc}</div>"
+                        f"<div style='color:{rc_color};font-size:.68rem;margin-top:.3rem;font-family:JetBrains Mono,monospace'>{esc_rc}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+    # Llamada directa y limpia (sin decorador de fragmento anidado)
+    _render_anomaly_charts()
 
 if st.session_state.active_section == "maintenance":
-    ordered = df_risk.merge(df_machines[["machine_id", "type", "location", "days_since_maintenance"]], on="machine_id").sort_values("priority_score", ascending=False)
+    ordered = df_risk.merge(df_machines[["machine_id", "type", "location", "days_since_maintenance", "operating_hours"]], on="machine_id").sort_values("priority_score", ascending=False)
     if not ordered.empty:
-        top = ordered.iloc[0]
-        top_tone = risk_tone(top["risk_level"])
-        top_color = risk_color(top["risk_level"])
-        top_alert_class = "critical" if top_tone == "red" else "moderate" if top_tone == "yellow" else "stable"
-        top_lamp = "critical" if top_tone == "red" else "moderate" if top_tone == "yellow" else ""
-        top_action = "ACCIÓN REQUERIDA" if top_tone == "red" else "REVISIÓN RECOMENDADA" if top_tone == "yellow" else "OPERACIÓN NORMAL"
-        st.markdown(f"<div class='section-head'><div><h2>Plan de mantenimiento</h2><p>Cola priorizada según el estado real de cada activo.</p></div><span class='pill {risk_pill(top['risk_level'])}'>{top_action}</span></div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='maintenance-hero {'alert-surface-critical alert-critical-card' if top_tone == 'red' else 'alert-surface-moderate' if top_tone == 'yellow' else ''}' style='--state-color:{top_color}'><div><span class='pill {risk_pill(top['risk_level'])}'><i class='alert-lamp {top_lamp}'></i>{top_action}</span><span class='eyebrow' style='margin-left:.55rem'>PRIORIDAD DE FLOTA</span><h2>{html.escape(format_machine_id(top['machine_id']))} · {html.escape(str(top['risk_level']))}</h2><p>Riesgo estimado: <strong>{top['risk_score']:.0f}%</strong>. Acción sugerida: <strong>{html.escape(str(top['priority']))}</strong>. {int(top['days_since_maintenance'])} días desde el último mantenimiento.</p></div><span class='pill'>LIVE_DEMO</span></div>", unsafe_allow_html=True)
+        # Encabezado de sección
+        st.markdown(
+            "<div class='section-head'><div><h2>Plan de mantenimiento &mdash; Top 3 Prioridades</h2>"
+            "<p>Cola priorizada según riesgo, criticidad e impacto operacional.</p></div></div>",
+            unsafe_allow_html=True,
+        )
+        # Hero Cards: Top 3 máquinas en columnas
+        top_3 = ordered.head(3)
+        hero_cols = st.columns(min(3, len(top_3)), gap="small")
+        for hero_i, (_, top) in enumerate(top_3.iterrows()):
+            t_tone   = risk_tone(top["risk_level"])
+            t_color  = risk_color(top["risk_level"])
+            t_lamp   = "critical" if t_tone == "red" else "moderate" if t_tone == "yellow" else ""
+            t_action = "ACCIÓN REQUERIDA" if t_tone == "red" else "REVISIÓN RECOMENDADA" if t_tone == "yellow" else "OPERACIÓN NORMAL"
+            t_alert  = "alert-surface-critical alert-critical-card" if t_tone == "red" else "alert-surface-moderate" if t_tone == "yellow" else ""
+            t_days   = int(top["days_since_maintenance"])
+            with hero_cols[hero_i]:
+                st.markdown(
+                    f"<div class='maintenance-hero {t_alert}' style='--state-color:{t_color};flex-direction:column;align-items:flex-start;gap:.55rem'>"
+                    f"<div style='width:100%'>"
+                    f"<span class='eyebrow' style='color:{t_color}'>PRIORIDAD #{hero_i + 1}</span>"
+                    f"<h2 style='margin:.3rem 0'>{html.escape(format_machine_id(top['machine_id']))}"
+                    f" &middot; <span style='color:{t_color}'>{html.escape(str(top['risk_level']))}</span></h2>"
+                    f"<p style='margin:0;font-size:.78rem'>{html.escape(str(top['type']))} &middot; {html.escape(str(top['location']))}</p>"
+                    f"<p style='margin:.25rem 0 0;font-size:.78rem'>Riesgo: <strong style='color:{t_color}'>{top['risk_score']:.0f}%</strong>"
+                    f" &middot; Acción: <strong>{html.escape(str(top['priority']))}</strong> &middot; {t_days}d sin mtto.</p>"
+                    f"</div>"
+                    f"<div style='width:100%'><div style='height:5px;background:rgba(255,255,255,.1);border-radius:3px;overflow:hidden'>"
+                    f"<div style='height:100%;width:{min(top['risk_score'],100):.0f}%;background:{t_color};border-radius:3px'></div>"
+                    f"</div></div>"
+                    f"<span class='pill {risk_pill(top['risk_level'])}'><i class='alert-lamp {t_lamp}'></i>{t_action}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+        # Report buttons for hero cards (top 3)
+        hero_report_cols = st.columns(min(3, len(top_3)), gap="small")
+        for hero_i, (_, top) in enumerate(top_3.iterrows()):
+            with hero_report_cols[hero_i]:
+                rkey = f"show_report_{top['machine_id']}"
+                if st.button("📋 Reporte", key=f"hero_report_{top['machine_id']}", width="stretch"):
+                    st.session_state[rkey] = not st.session_state.get(rkey, False)
+                if st.session_state.get(rkey, False):
+                    with st.expander(f"📋 Señales — {format_machine_id(top['machine_id'])}", expanded=True):
+                        sig = compute_machine_signals(top["machine_id"], dashboard_live_df, model, feature_cols, top, top)
+                        render_mini_report(sig, df_errors, meta)
     else:
+
         st.markdown("<div class='section-head'><div><h2>Plan de mantenimiento</h2><p>Sin activos disponibles para priorizar.</p></div><span class='pill pill-green'>OPERACIÓN NORMAL</span></div>", unsafe_allow_html=True)
     st.markdown("<div class='resource-grid'><div class='resource-card'><div class='resource-icon'>&#128101;</div><div><span>TECNICOS DISPONIBLES</span><strong>3 equipos de guardia</strong><span style='color:var(--green)'>Turno operativo</span></div></div><div class='resource-card'><div class='resource-icon'>&#128230;</div><div><span>REPUESTOS CRITICOS</span><strong>Inventario por conectar</strong><span>Fuente preparada para integración</span></div></div><div class='resource-card'><div class='resource-icon'>&#9201;</div><div><span>MTBF PROYECTADO</span><strong>Modelo en ejecución</strong><span>Calculado al conectar historial</span></div></div></div>", unsafe_allow_html=True)
     st.markdown("<div class='section-head'><div><h2>Cola de intervención priorizada</h2><p>Ordenada por riesgo, criticidad e impacto operacional.</p></div><span class='eyebrow'>ALGORITMO RUL</span></div>", unsafe_allow_html=True)
     for rank, (_, row) in enumerate(ordered.iterrows(), start=1):
         tone = risk_color(row["risk_level"])
         row_tone = risk_tone(row["risk_level"])
-        row_alert_class = "alert-critical-card" if row_tone == "red" else "alert-moderate-card" if row_tone == "yellow" else ""
         row_lamp = "critical" if row_tone == "red" else "moderate" if row_tone == "yellow" else ""
         selected_badge = "<span class='pill'>SELECCIONADA</span>" if str(row["machine_id"]) == str(selected_machine) else ""
-        st.markdown(f"<div class='priority {row_alert_class}' style='border-left-color:{tone}'><div class='priority-title'><span class='rank-badge' style='background:{tone}'>{rank}</span><i class='alert-lamp {row_lamp}'></i>{html.escape(format_machine_id(row['machine_id']))} {selected_badge} — {html.escape(str(row['type']))} <span class='pill {risk_pill(row['risk_level'])}'>{row['risk_score']:.0f}% · {html.escape(str(row['risk_level']).upper())}</span></div><div class='priority-copy'>Acción: {html.escape(str(row['priority']))} · Ubicación: {html.escape(str(row['location']))}</div><div class='priority-meta'><span>Criticidad: {html.escape(str(row['criticality']))}</span><span>{int(row['days_since_maintenance'])} días sin mantenimiento</span><span>Prioridad: {row['priority_score']:.0f}</span></div></div>", unsafe_allow_html=True)
-        if row_tone in {"red", "yellow"}:
-            action_cols = st.columns([1, 1, 4])
-            with action_cols[0]:
-                if st.button("Telemetría", key=f"maintenance_telemetry_{rank}_{row['machine_id']}", width="stretch"):
-                    navigate_to_section(row["machine_id"], "telemetry")
-            with action_cols[1]:
-                if st.button("Diagnóstico", key=f"maintenance_diagnostic_{rank}_{row['machine_id']}", width="stretch"):
-                    navigate_to_section(row["machine_id"], "anomalies")
+        rkey = f"show_report_{row['machine_id']}"
+        with st.container(border=True, key=f"maintenance_record_{row_tone}_{rank}_{row['machine_id']}"):
+            content_col, btn_col = st.columns([8.5, 3.5], vertical_alignment="center", gap="small")
+            with content_col:
+                st.markdown(f"<div class='priority-details'><div class='priority-title'><span class='rank-badge' style='background:{tone}'>{rank}</span><i class='alert-lamp {row_lamp}'></i>{html.escape(format_machine_id(row['machine_id']))} {selected_badge} — {html.escape(str(row['type']))} <span class='pill {risk_pill(row['risk_level'])}'>{row['risk_score']:.0f}% · {html.escape(str(row['risk_level']).upper())}</span></div><div class='priority-copy'>Acción: {html.escape(str(row['priority']))} · Ubicación: {html.escape(str(row['location']))}</div><div class='priority-meta'><span>Criticidad: {html.escape(str(row['criticality']))}</span><span>{int(row['days_since_maintenance'])} días sin mantenimiento</span><span>Prioridad: {row['priority_score']:.0f}</span></div></div>", unsafe_allow_html=True)
+            with btn_col:
+                action_cols = st.columns(3, gap="small")
+                with action_cols[0]:
+                    if st.button("📡", key=f"maintenance_telemetry_{rank}_{row['machine_id']}", help="Ver telemetría", width="stretch"):
+                        navigate_to_section(row["machine_id"], "telemetry")
+                with action_cols[1]:
+                    if st.button("🔍", key=f"maintenance_diagnostic_{rank}_{row['machine_id']}", help="Ver diagnóstico", width="stretch"):
+                        navigate_to_section(row["machine_id"], "anomalies")
+                with action_cols[2]:
+                    if st.button("📋", key=f"maintenance_report_{rank}_{row['machine_id']}", help="Ver reporte de señales", width="stretch"):
+                        st.session_state[rkey] = not st.session_state.get(rkey, False)
+        if st.session_state.get(rkey, False):
+            with st.expander(f"📋 Mini-reporte de señales — {format_machine_id(row['machine_id'])}", expanded=True):
+                sig = compute_machine_signals(row["machine_id"], dashboard_live_df, model, feature_cols, row, row)
+                render_mini_report(sig, df_errors, meta)

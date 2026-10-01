@@ -11,6 +11,7 @@ SIM_INDEX_KEY = "demo_sim_index"
 SIM_TIME_KEY = "demo_sim_datetime"
 SIM_RUNNING_KEY = "demo_sim_running"
 SIM_ALERT_KEY = "demo_sim_previous_risk_levels"
+SIM_FRAME_KEY = "demo_sim_current_frame"
 PERIOD_KEY = "demo_sim_period"
 
 PERIOD_HOURS = {
@@ -66,6 +67,85 @@ def reset_simulation_state() -> None:
     st.session_state[SIM_RUNNING_KEY] = False
     st.session_state[SIM_ALERT_KEY] = {}
     st.session_state[PERIOD_KEY] = "24H"
+    st.session_state.pop(SIM_FRAME_KEY, None)
+
+
+def is_simulator_running() -> bool:
+    """Return True when the playback loop is active."""
+    return bool(st.session_state.get(SIM_RUNNING_KEY, False))
+
+
+def get_current_sim_time():
+    """Return the current simulation timestamp (or None when paused/initial)."""
+    return st.session_state.get(SIM_TIME_KEY)
+
+
+def get_current_sim_frame() -> pd.DataFrame | None:
+    """Return the most recently scored fleet frame (all machines at current timestamp)."""
+    return st.session_state.get(SIM_FRAME_KEY)
+
+
+def simulation_tick(
+    live_df: pd.DataFrame,
+    model,
+    feature_cols: list[str],
+    threshold: float,
+) -> pd.DataFrame | None:
+    """Advance the simulation by one step if running.
+
+    Pure time-keeping + inference — no UI rendering.  Designed to be called
+    from a global ``@st.fragment(run_every=...)`` so the replay clock keeps
+    ticking on every section of the dashboard.
+
+    Side-effects (session_state):
+      * ``SIM_INDEX_KEY``  — advancing position on the timeline
+      * ``SIM_TIME_KEY``   — timestamp of the current step
+      * ``SIM_FRAME_KEY``  — DataFrame of all machines at that timestamp
+                            (with ``failure_probability`` and ``risk_level``)
+      * ``SIM_ALERT_KEY``  — rolling dict of risk levels (for change detection)
+    """
+    timeline = pd.Index(live_df["datetime"].drop_duplicates().sort_values())
+    _init_simulation_state(len(timeline))
+
+    if not st.session_state.get(SIM_RUNNING_KEY):
+        return None
+
+    next_index = st.session_state[SIM_INDEX_KEY] + 1
+    if next_index >= len(timeline):
+        st.session_state[SIM_RUNNING_KEY] = False
+        st.session_state[SIM_TIME_KEY] = None
+        st.session_state.pop(SIM_FRAME_KEY, None)
+        st.rerun(scope="app")
+        return None
+
+    st.session_state[SIM_INDEX_KEY] = next_index
+    current_time = pd.Timestamp(timeline[next_index])
+    st.session_state[SIM_TIME_KEY] = current_time
+
+    current_frame = live_df[live_df["datetime"] == current_time].copy()
+    machine_col = "machine_id" if "machine_id" in current_frame.columns else "machineID"
+    current_frame["machine_id"] = current_frame[machine_col].astype(str)
+    current_frame["failure_probability"] = predict_probabilities(
+        model, feature_cols, current_frame
+    )
+    current_frame["risk_level"] = current_frame["failure_probability"].map(_risk_level)
+    st.session_state[SIM_FRAME_KEY] = current_frame
+
+    previous_levels = st.session_state.get(SIM_ALERT_KEY, {})
+    current_levels = dict(zip(current_frame["machine_id"], current_frame["risk_level"]))
+    risk_level_changes = []
+    alert_levels = {"Moderado", "Critico"}
+    for asset_id, level in current_levels.items():
+        previous_level = previous_levels.get(asset_id, "Estable")
+        if level != previous_level and ({level, previous_level} & alert_levels):
+            risk_level_changes.append(asset_id)
+    st.session_state[SIM_ALERT_KEY] = current_levels
+
+    if risk_level_changes:
+        st.session_state[SIM_RUNNING_KEY] = False
+        st.rerun(scope="app")
+
+    return current_frame
 
 
 def _init_simulation_state(timeline_size: int) -> None:
@@ -146,26 +226,43 @@ def render_demo_simulator(
                             st.session_state[PERIOD_KEY] = period
                             st.rerun()
         with control_cols[2]:
-            button_cols = st.columns(3, gap="small")
+            button_cols = st.columns(5, gap="small")
             with button_cols[0]:
-                if st.button("▶ Iniciar", key="demo_start", type="primary", width="stretch", disabled=st.session_state[SIM_RUNNING_KEY]):
+                prev_disabled = st.session_state[SIM_INDEX_KEY] <= 0
+                if st.button("\u23ee", key="demo_prev", width="stretch", help="Paso anterior", disabled=prev_disabled):
+                    new_idx = max(0, st.session_state[SIM_INDEX_KEY] - 1)
+                    st.session_state[SIM_INDEX_KEY] = new_idx
+                    st.session_state[SIM_TIME_KEY] = pd.Timestamp(timeline[new_idx])
+                    st.session_state[SIM_RUNNING_KEY] = False
+                    st.rerun()
+            with button_cols[1]:
+                if st.button("\u25b6", key="demo_start", type="primary", width="stretch", help="Iniciar", disabled=st.session_state[SIM_RUNNING_KEY]):
                     if st.session_state[SIM_INDEX_KEY] >= len(timeline) - 1:
                         st.session_state[SIM_INDEX_KEY] = -1
                         st.session_state[SIM_TIME_KEY] = None
                         st.session_state[SIM_ALERT_KEY] = {}
                     st.session_state[SIM_RUNNING_KEY] = True
                     st.rerun()
-            with button_cols[1]:
-                if st.button("Ⅱ Pausar", key="demo_pause", width="stretch", disabled=not st.session_state[SIM_RUNNING_KEY]):
+            with button_cols[2]:
+                if st.button("\u2161", key="demo_pause", width="stretch", help="Pausar", disabled=not st.session_state[SIM_RUNNING_KEY]):
                     st.session_state[SIM_RUNNING_KEY] = False
                     st.rerun()
-            with button_cols[2]:
-                if st.button("↺ Reiniciar", key="demo_reset", width="stretch"):
+            with button_cols[3]:
+                next_disabled = st.session_state[SIM_INDEX_KEY] >= len(timeline) - 1
+                if st.button("\u23ed", key="demo_next", width="stretch", help="Paso siguiente", disabled=next_disabled):
+                    new_idx = min(len(timeline) - 1, st.session_state[SIM_INDEX_KEY] + 1)
+                    st.session_state[SIM_INDEX_KEY] = new_idx
+                    st.session_state[SIM_TIME_KEY] = pd.Timestamp(timeline[new_idx])
+                    st.session_state[SIM_RUNNING_KEY] = False
+                    st.rerun()
+            with button_cols[4]:
+                if st.button("\u21ba", key="demo_reset", width="stretch", help="Reiniciar"):
                     st.session_state[SIM_INDEX_KEY] = -1
                     st.session_state[SIM_TIME_KEY] = None
                     st.session_state[SIM_RUNNING_KEY] = False
                     st.session_state[SIM_ALERT_KEY] = {}
                     st.rerun()
+
         status = "REPRODUCIENDO" if st.session_state[SIM_RUNNING_KEY] else "EN PAUSA"
         st.markdown(
             f"<div class='simulator-controls-label'>ESTADO</div><span class='pill {'pill-green' if st.session_state[SIM_RUNNING_KEY] else ''}'>{status}</span>",
@@ -174,50 +271,20 @@ def render_demo_simulator(
 
     @st.fragment(run_every=0.8 if st.session_state[SIM_RUNNING_KEY] else None)
     def playback_panel():
-        if st.session_state[SIM_RUNNING_KEY]:
-            next_index = st.session_state[SIM_INDEX_KEY] + 1
-            if next_index >= len(timeline):
-                st.session_state[SIM_RUNNING_KEY] = False
-                st.rerun(scope="app")
-            else:
-                current_time = pd.Timestamp(timeline[next_index])
-                st.session_state[SIM_INDEX_KEY] = next_index
-                st.session_state[SIM_TIME_KEY] = current_time
-
-                current_frame = live_df[live_df["datetime"] == current_time].copy()
-                machine_col = "machine_id" if "machine_id" in current_frame.columns else "machineID"
-                current_frame["machine_id"] = current_frame[machine_col].astype(str)
-                current_frame["failure_probability"] = predict_probabilities(
-                    model, feature_cols, current_frame
-                )
-                selected_rows = current_frame[
-                    current_frame["machine_id"] == str(machine_id)
-                ]
-                current_frame["risk_level"] = current_frame["failure_probability"].map(_risk_level)
-                previous_levels = st.session_state[SIM_ALERT_KEY]
-                current_levels = dict(zip(current_frame["machine_id"], current_frame["risk_level"]))
-                risk_level_changes = []
-                alert_levels = {"Moderado", "Critico"}
-                for asset_id, level in current_levels.items():
-                    previous_level = previous_levels.get(asset_id, "Estable")
-                    if level != previous_level and ({level, previous_level} & alert_levels):
-                        risk_level_changes.append(asset_id)
-                st.session_state[SIM_ALERT_KEY] = current_levels
-                if risk_level_changes:
-                    st.session_state[SIM_RUNNING_KEY] = False
-                    st.rerun(scope="app")
+        # Time advancement is handled by the global fragment in app.py
+        # via simulation_tick().  This panel only renders the current frame
+        # stored in session_state[SIM_FRAME_KEY].
 
         current_time = st.session_state.get(SIM_TIME_KEY)
         if current_time is None:
             st.info("La demo está lista. Inicia la reproducción para avanzar una hora de telemetría por intervalo.")
             return
 
-        current_rows = live_df[live_df["datetime"] == pd.Timestamp(current_time)].copy()
-        machine_col = "machine_id" if "machine_id" in current_rows.columns else "machineID"
-        current_rows["machine_id"] = current_rows[machine_col].astype(str)
-        current_rows["failure_probability"] = predict_probabilities(
-            model, feature_cols, current_rows
-        )
+        current_rows = get_current_sim_frame()
+        if current_rows is None or current_rows.empty:
+            st.warning("No hay datos de la simulación disponibles.")
+            return
+
         selected_rows = current_rows[current_rows["machine_id"] == str(machine_id)]
         if selected_rows.empty:
             st.warning(f"No hay una lectura para la máquina {format_machine_id(machine_id)} en este periodo.")
@@ -226,7 +293,6 @@ def render_demo_simulator(
         selected_row = selected_rows.iloc[0]
         probability = float(selected_row["failure_probability"])
         risk_level = _risk_level(probability)
-        current_rows["risk_level"] = current_rows["failure_probability"].map(_risk_level)
         critical_count = int((current_rows["risk_level"] == "Critico").sum())
         moderate_count = int((current_rows["risk_level"] == "Moderado").sum())
         if risk_level == "Critico":
@@ -325,13 +391,20 @@ def render_demo_simulator(
                             if st.button("Ver en matriz", key=f"sim_matrix_{alert['machine_id']}", width="stretch"):
                                 navigate_to_diagnostic_matrix(alert["machine_id"])
 
+        # El gráfico de telemetría se renderiza en el fragmento global
+        # _live_telemetry_fragment(); este panel solo entrega controles y alertas.
         chart_rows = _telemetry_window(live_df, machine_id, current_time).copy()
-        chart_rows = chart_rows.rename(columns={"datetime": "timestamp", "volt": "voltage"})
-        render_chart(chart_rows)
-        st.caption(
-            f"Lectura {st.session_state[SIM_INDEX_KEY] + 1:,} de {len(timeline):,} · "
-            f"Fecha simulada: {pd.Timestamp(current_time):%Y-%m-%d %H:%M} · "
-            f"Umbral del modelo: {threshold:.1%}"
+        if render_chart is not None:
+            render_chart(chart_rows)
+
+        # Barra de progreso del lote reproducido
+        progress_val = (st.session_state[SIM_INDEX_KEY] + 1) / max(len(timeline), 1)
+        current_idx = st.session_state[SIM_INDEX_KEY] + 1
+        st.progress(
+            min(progress_val, 1.0),
+            text=f"Lectura {current_idx:,} de {len(timeline):,} · "
+                 f"{pd.Timestamp(current_time):%Y-%m-%d %H:%M} · "
+                 f"Umbral: {threshold:.1%}",
         )
         if st.session_state[SIM_INDEX_KEY] >= len(timeline) - 1 and not st.session_state[SIM_RUNNING_KEY]:
             st.info("La reproducción llegó al final del periodo disponible.")

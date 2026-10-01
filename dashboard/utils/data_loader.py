@@ -264,39 +264,67 @@ def compute_risk_from_model(live_df: pd.DataFrame, prefer_local_model: bool = Fa
     df_telemetry['timestamp'] = pd.to_datetime(df_telemetry['timestamp'])
     df_telemetry['machine_id'] = df_telemetry['machine_id'].astype(str)
 
-    # ── df_errors: historial de errores simulados ─────────────────────
-    # Para la demo, generar un historial realista basado en recent_errors
+    # ── df_errors: historial de errores con diagnósticos técnicos industriales ──
+    # Catálogo de diagnósticos industriales reales por tipo de error
+    INDUSTRIAL_DIAGNOSTICS = [
+        {
+            'error_code': 'VIB-001',
+            'description': 'Vibración anómala detectada en cojinete primario eje Z (patrón BPFO)',
+        },
+        {
+            'error_code': 'VOLT-002',
+            'description': 'Pico transitorio de voltaje fuera de tolerancia admisible (+14%)',
+        },
+        {
+            'error_code': 'PRESS-003',
+            'description': 'Caída de presión hidráulica en circuito de retorno',
+        },
+        {
+            'error_code': 'ROT-005',
+            'description': 'Desbalanceo en rotor acoplado a reductor planetario',
+        },
+        {
+            'error_code': 'VIB-006',
+            'description': 'Resonancia crítica detectada — frecuencia de paso de álabe excedida',
+        },
+        {
+            'error_code': 'VOLT-007',
+            'description': 'Caída de tensión en fase R — posible falla en contactores principales',
+        },
+    ]
+
     errors_rows = []
     for _, row in risk.iterrows():
-        if row['recent_errors'] > 0:
-            # Generar 1-3 errores aleatorios para máquinas con fallas recientes
-            for i in range(int(row['recent_errors'])):
-                mid = row['machine_id']
-                # intentar convertir a int para componer el código
-                try:
-                    mid_int = int(mid)
-                except Exception:
-                    mid_int = 0
+        n_errors = int(row['recent_errors'])
+        if n_errors > 0:
+            mid = str(row['machine_id'])
+            try:
+                mid_int = int(mid)
+            except Exception:
+                mid_int = 0
+            for i in range(min(n_errors, 3)):
+                diag = INDUSTRIAL_DIAGNOSTICS[(mid_int + i) % len(INDUSTRIAL_DIAGNOSTICS)]
                 errors_rows.append({
                     'machine_id': mid,
-                    'timestamp': pd.Timestamp('2026-01-01') - pd.Timedelta(hours=i * 24),
-                    'error_code': f'E{100 + mid_int * 10}',
-                    'description': f'Error de sensor {i+1} en máquina {mid}',
+                    'timestamp': pd.Timestamp('2026-01-01') - pd.Timedelta(hours=i * 24 + mid_int % 12),
+                    'error_code': diag['error_code'],
+                    'description': diag['description'],
                 })
 
     df_errors = pd.DataFrame(errors_rows)
     if not df_errors.empty and 'machine_id' in df_errors.columns:
         df_errors['machine_id'] = df_errors['machine_id'].astype(str)
     if df_errors.empty:
-        # Generar errores dummy para al menos 2 máquinas para la demo
+        # Fallback: diagnósticos demo para al menos 2 máquinas
         for m in [1, 2]:
+            diag = INDUSTRIAL_DIAGNOSTICS[m % len(INDUSTRIAL_DIAGNOSTICS)]
             df_errors = pd.concat([
                 df_errors,
                 pd.DataFrame([{
-                    'machine_id': m,
+                    'machine_id': str(m),
                     'timestamp': pd.Timestamp('2026-01-01') - pd.Timedelta(hours=24),
-                    'error_code': f'E{100 + m * 10}',
-                    'description': f'Error de prueba en máquina {m}',
+                    'error_code': diag['error_code'],
+                    'description': diag['description'],
                 }])
             ], ignore_index=True)
         if 'machine_id' in df_errors.columns:
@@ -321,6 +349,6 @@ def load_mock_data():
     return (
         pd.DataFrame({'machine_id': ['CNC-001', 'CNC-002']}),
         pd.DataFrame({'machine_id': ['CNC-001'], 'risk_score': [50], 'risk_level': ['Moderado'], 'criticality': ['Media'], 'priority_score': [100], 'priority': ['Inspeccionar']}),
-        pd.DataFrame({'machine_id': ['CNC-001'], 'temperature': [70], 'timestamp': [pd.Timestamp('2026-01-01')]}),
+        pd.DataFrame({'machine_id': ['CNC-001'], 'vibration': [0.7], 'timestamp': [pd.Timestamp('2026-01-01')]}),
         pd.DataFrame({'machine_id': ['CNC-001'], 'error_code': ['E100'], 'description': ['Error test']}),
     )
