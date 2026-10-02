@@ -28,6 +28,18 @@ El sistema debe permitir que un responsable de mantenimiento, sin revisar manual
 2. COMPRENDER qué señales o variables justifican ese riesgo.
 3. PRIORIZAR qué máquina debería atenderse primero.
 
+## ¿Cómo funciona?
+
+**Datos y Modelo**: Al abrir la aplicación, los datos y el modelo entrenado se descargan automáticamente (para fines de presetación, instancia desde GitHub). El modelo ya viene serializado, entrenado y listo para usar.
+
+**Inferencia (Predicción)**: Cada vez que cargas el dashboard, el modelo analiza los 87,700 registros de 100 máquinas y calcula el riesgo de falla en las próximas 24h para cada una. Se hace en lote (batch) una sola vez, no máquina por máquina.
+
+**Simulador**: Permite "rebobinar" o "avanzar" el reloj hora a hora para ver cómo cambia el riesgo en el tiempo. Tiene controles de reproducción (play/pausa/avance/retroceso) y muestra alertas cuando el riesgo sube/baja.
+
+**Predicción y Alertas**: El modelo asigna 3 niveles: Crítico (≥60%), Moderado (30-59%), Estable (<30%). Las lámparas parpadeantes indican cambios de nivel en tiempo real.
+
+**Priorización y Reporte**: Combina riesgo × criticidad = score de prioridad. Muestra cola ordenada con acción recomendada (Intervenir/Inspeccionar/Monitorear/Ninguna) y plazos. Botón "Reporte" muestra las 5 señales principales que explican el riesgo.
+
 ## Alcance MVP
 
 ### MUST HAVE
@@ -73,6 +85,7 @@ Dataset → Limpieza → Feature Engineering → Modelo ML → Artefacto (.jobli
 - Scikit-learn
 - Joblib
 - Plotly / Matplotlib / Seaborn
+- Stitch
 - Streamlit
 - Jupyter / Google Colab
 - Git, GitHub
@@ -100,7 +113,8 @@ Pipeline ML, validación, serialización, integración, Dashboard Streamlit, UX.
 ### Software Engineer
 
 - Albeiro Burbano ✅
-  Arquitectura, GitHub, integración, deploy, CI
+
+Arquitectura, GitHub, integración, deploy, CI
 
 ## Estructura del repositorio
 
@@ -156,12 +170,74 @@ Pipeline ML, validación, serialización, integración, Dashboard Streamlit, UX.
 
 **Tests:** 7/7 passing (`tests/`)
 
-**En progreso (pendiente ~15%):**
+- Mejoras de calidad de código: Corrección de indentación y eliminación de fragmentos duplicados en `dashboard/components/demo_simulator.py` y `dashboard/app.py` sin cambios funcionales.
+
+**MVP completado:**
 
 - UI/UX refinada con Stitch (tema, componentes, responsive)
 - Deploy a Streamlit Cloud / CI/CD rebuild automático
 - Streaming tiempo real / Monitoreo drift en producción
 - SHAP explainability (opcional)
+
+## Próximos pasos y evolución de arquitectura
+
+### Mejoras Inmediatas (Corto plazo)
+
+- **Entrenar otros modelos**: como LSTM, CatBoost, CNN, Redes Neuronales, etc. con el objetivo de compararlos con el modelo actual y determinar cuál es el más eficiente, considerar hibridación.
+- **CI/CD automático**: GitHub Actions para rebuild del modelo y deploy a Streamlit Cloud
+- **Monitoreo de drift**: Alertas si la distribución de features cambia en producción
+- **SHAP explainability**: Explicaciones por predicción individual (no solo feature importance global)
+
+### Escalabilidad y Arquitectura (Mediano plazo)
+
+- **FastAPI + Autenticación**: API REST separada del dashboard para:
+  - Autenticación/autorización (JWT, roles: admin, operador, viewer)
+  - Endpoints: `/predict`, `/risk-ranking`, `/machine-detail`, `/telemetry`
+  - Base de datos PostgreSQL para historial de predicciones, auditoría, configuración
+- **Alertas persistentes**: Sistema de notificaciones (email, Slack, Teams, móvil) con reglas configurables
+- **Multi-tenancy**: Soporte para múltiples plantas/clientes en una sola instancia
+
+### Migración de Frontend (Largo plazo)
+
+**Objetivo**: Migrar de Streamlit (Python) a React 18 SPA para mayor control UX, performance y escalabilidad.
+
+| Aspecto   | Actual (Streamlit)       | Objetivo (React 18 SPA)                                                    |
+| --------- | ------------------------ | -------------------------------------------------------------------------- |
+| Runtime   | Python (servidor)        | Navegador (Web)                                                            |
+| Framework | Streamlit                | React 18 + Vite + TypeScript + Tailwind CSS                                |
+| Estado    | Server-side session      | Client-side (Zustand/Redux) + React Query                                  |
+| Gráficos | Plotly (server-rendered) | Recharts / Visx / uPlot (client-side)                                      |
+| Real-time | `@st.fragment` polling | WebSockets / Server-Sent Events                                            |
+| Deploy    | Streamlit Cloud          | Vercel / Netlify / Azure Static Web Apps + FastAPI en Azure Container Apps |
+
+**Componentes a migrar**:
+
+1. `risk_table.py` → Tabla virtualizada con ordenamiento/filtrado client-side
+2. `sensor_chart.py` → Gráficos interactivos con zoom/pan/brush nativo
+3. `demo_simulator.py` → Controles de reproducción + WebSocket para tiempo real
+4. `machine_detail.py` → Vista detalle con pestañas, accordion, lazy loading
+5. `mini_report.py` → Modal/panel lateral con feature importance interactivo
+6. Auth: Login page, protected routes, role-based UI
+
+**Backend (FastAPI) endpoints necesarios**:
+
+```
+GET  /api/v1/machines                    # Lista máquinas con risk_score
+GET  /api/v1/machines/{id}/risk          # Detalle riesgo + señales
+GET  /api/v1/machines/{id}/telemetry     # Serie temporal (con query params: period, from, to)
+GET  /api/v1/machines/{id}/errors        # Histórico errores
+GET  /api/v1/simulation/state            # Estado simulador (time, running, period)
+POST /api/v1/simulation/control          # play/pause/step/reset
+GET  /api/v1/report/{machine_id}         # Mini-reporte (feature importance, root cause)
+WS   /ws/simulation                      # Updates en tiempo real (0.8s)
+```
+
+**Criterios de migración**:
+
+- Paridad funcional 100% antes de switch
+- Mantener modelo Python (joblib) servido vía FastAPI
+- Tests E2E (Playwright) para validar paridad visual/comportamiento
+- Deploy canary / feature flags para rollout gradual
 
 ## Roadmap de 4 semanas
 
@@ -291,3 +367,25 @@ El dashboard permite al responsable de mantenimiento:
 1. **Identificar** máquinas con mayor riesgo (ranking interactivo + bar chart + alertas críticas luminosas).
 2. **Comprender** señales (telemetría temporal volt/rotate/pressure/vibration + histórico de errores + simulador de anomalías).
 3. **Priorizar** intervención (cola ordenada por `priority_score` = riesgo × criticidad + recomendación principal + plazos de atención).
+
+---
+
+**Contacto:**
+
+**Proyecto: Predictive Maintenance**
+
+**EQUIPO NO COUNTRY SET-2026: S08-26-EQUIPO-24**
+
+* [lurquijon@gmail.com](mailto:lurquijon@gmail.com)
+* [hdgh2355@gmail.com](mailto:hdgh2355@gmail.com)
+* [albeirojbt@gmail.com](mailto:albeirojbt@gmail.com)
+* [bigo42923@gmail.com](mailto:bigo42923@gmail.com)
+
+---
+
+## Licencia
+
+Este proyecto está bajo la **Licencia MIT**. Puedes usar, modificar y distribuir el código libremente, siempre y cuando se mantenga el aviso de derechos de autor y se mencione el repositorio original y a sus autores.
+
+---
+
