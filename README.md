@@ -31,6 +31,7 @@ El sistema debe permitir que un responsable de mantenimiento, sin revisar manual
 ## Alcance MVP
 
 ### MUST HAVE
+
 - Dataset seleccionado y justificado ✅ **Azure PdM**
 - Limpieza y tratamiento de datos ✅
 - EDA ✅
@@ -39,6 +40,7 @@ El sistema debe permitir que un responsable de mantenimiento, sin revisar manual
 - Integración, pruebas y deploy ✅
 
 ### SHOULD HAVE
+
 - SHAP o explicación avanzada ✅ (Feature importance y señales en UI)
 - Filtros avanzados ✅ (Estado de riesgo, criticidad, selectores dinámicos)
 - Comparación de máquinas ✅ (Detalle por activo y matriz de riesgo)
@@ -46,6 +48,7 @@ El sistema debe permitir que un responsable de mantenimiento, sin revisar manual
 - Recomendación preventiva específica ✅ (Acciones y plazos de atención recomendados)
 
 ### COULD HAVE
+
 - Alertas visuales dinámicas ✅ (Lámparas parpadeantes y tarjetas animadas según nivel de riesgo)
 - Simulador interactivo de telemetría ✅ (Pruebas de resistencia y alteración de sensores en vivo)
 - RUL / Horas hasta falla (Documentado en roadmap futuro)
@@ -76,20 +79,28 @@ Dataset → Limpieza → Feature Engineering → Modelo ML → Artefacto (.jobli
 - Deploy: Streamlit Community Cloud
 
 ## Roles del equipo
+
 Activos ✅
-### Data Scientists
-- Luis Fernando Tapia — Modelado, baseline, modelos, métricas
-- Oscar Arauz — Feature Engineering, transformaciones, variables temporales
-- Lennin Billey Temoche Gómez — Pipeline ML, validación, serialización, integración ✅
 
 ### Data Analysts
-- Lorena Urrutia — Product & Business, historias de usuario, KPIs, criticidad ✅
-- Alexander Tovar Morcillo — Data Quality, profiling, nulos, outliers
-- Héctor García — EDA, visualización, tendencias ✅
-- Carlos Vega — Dashboard, UX, Streamlit
+
+- Lorena Urrutia  ✅
+- Héctor García  ✅
+
+Product & Business, historias de usuario, KPIs, criticidad, EDA, visualización, tendencias, Data Quality, profiling, nulos, outliers, reporte ejecutivo, presentación demo.
+
+### Data Scientists
+
+- Lennin Temoche ✅
+
+EDA Predictivo, FeatureEngineering, Modelado,
+
+Pipeline ML, validación, serialización, integración, Dashboard Streamlit, UX.
 
 ### Software Engineer
-- Albeiro Burbano — Arquitectura, GitHub, integración, deploy, CI ✅
+
+- Albeiro Burbano ✅
+  Arquitectura, GitHub, integración, deploy, CI
 
 ## Estructura del repositorio
 
@@ -108,27 +119,31 @@ Activos ✅
 **Core MVP (100% Completado):** Modelo entrenado, serializado e integrado en dashboard Streamlit con tema oscuro premium, simulador interactivo de telemetría y sistema de alertas visuales en vivo. Pipeline ML-Dashboard funcional end-to-end.
 
 **Dataset seleccionado:** Microsoft Azure Predictive Maintenance (Azure PdM) ✅
+
 - Evaluación completada con matriz de 20 criterios ponderados.
 - Análisis automatizado en `notebooks/01_data_exploration.ipynb`.
 - Documentación en `docs/dataset_selection.md` y `docs/decisions.md` (DEC-009).
 
 **Modelo Candidato (Random Forest):**
+
 - PR-AUC: 0.9919 | ROC-AUC: 0.9999 | Recall: 1.0 | Precision: 0.8001 (threshold=0.5591)
 - Threshold guardado en el artefacto: `0.5591`
 - 46 features (sensores + historial errores + mantenimiento + rolling windows + deltas)
 - Serializado en `models/baseline_model.joblib`
 
 **Split temporal (sin data leakage):**
-| Split | Filas | % | Periodo | Tasa positivos |
-|-------|-------|---|---------|----------------|
-| Train | 654,600 | 74.72% | 2015-01-01 → 2015-09-30 | 2.01% |
-| Test  | 131,400 | 15.00% | 2015-10-02 → 2015-11-25 | 1.68% |
-| Live  | 87,700  | 10.01% | 2015-11-25 → 2016-01-01 | 1.97% |
+
+| Split | Filas   | %      | Periodo                  | Tasa positivos |
+| ----- | ------- | ------ | ------------------------ | -------------- |
+| Train | 654,600 | 74.72% | 2015-01-01 → 2015-09-30 | 2.01%          |
+| Test  | 131,400 | 15.00% | 2015-10-02 → 2015-11-25 | 1.68%          |
+| Live  | 87,700  | 10.01% | 2015-11-25 → 2016-01-01 | 1.97%          |
 
 - Gap de 24h entre train y test
 - Validación anti-leakage: 4 estrategias confirman PR-AUC > 0.99 (temporal, mensual, por máquina, aleatorio)
 
 **Dashboard (`dashboard/app.py`):** Pipeline de inferencia en tiempo real y componentes avanzados:
+
 - **Carga de datos:** `live_demo.parquet` (87,700 filas, 100 máquinas) desde GitHub (`main/data/processed/`) con fallback local `data/processed/live_demo.parquet`. Cache con `@st.cache_data`.
 - **Carga de modelo:** `baseline_model.joblib` desde GitHub (`main/models/`) con fallback local. Cache con `@st.cache_resource`.
 - **Selector de origen:** Sidebar con radio `GitHub` / `Local` + botón 🔄 Recargar (limpia caches).
@@ -142,6 +157,7 @@ Activos ✅
 **Tests:** 7/7 passing (`tests/`)
 
 **En progreso (pendiente ~15%):**
+
 - UI/UX refinada con Stitch (tema, componentes, responsive)
 - Deploy a Streamlit Cloud / CI/CD rebuild automático
 - Streaming tiempo real / Monitoreo drift en producción
@@ -162,7 +178,7 @@ Ver docs/backlog.md para el backlog completo organizado por épicas.
 
 ## Reglas de desarrollo
 
-- Crear branch feature/<id>-descripcion, fix/<id>- descripcion, docs/< descripcion>
+- Crear branch feature/<id></id>-descripcion, fix/<id></id>- descripcion, docs/< descripcion>
 - Commits con prefijo: feat:, fix:, docs:, refactor:, test:, chore:
 - PR por tarea, con al menos un revisor
 - Definition of Done: desarrollada, funciona, probada, revisada, integrada, documentada
@@ -170,22 +186,26 @@ Ver docs/backlog.md para el backlog completo organizado por épicas.
 ## Cómo preparar el entorno local
 
 ### Requisitos
+
 - Python 3.12 o superior
 - Git
 - IDE con terminal integrada (VS Code, Antigravity, etc.)
 
 ### Paso 1: Clonar
+
 ```bash
 git clone https://github.com/No-Country-simulation/S08-26-EQUIPO-24
 cd S08-26-EQUIPO-24
 ```
 
 ### Paso 2: Crear entorno virtual
+
 ```bash
 python -m venv .venv
 ```
 
 ### Paso 3: Activar
+
 ```bash
 # Windows PowerShell
 .venv\Scripts\Activate.ps1
@@ -196,6 +216,7 @@ source .venv/bin/activate
 ```
 
 ### Paso 4: Instalar dependencias
+
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
@@ -204,11 +225,13 @@ python -m pip install -r requirements.txt
 Se requiere Python 3.11 o superior. `scikit-learn` queda fijado a la version usada para serializar el modelo.
 
 ### Paso 5: Verificar
+
 ```bash
 python -c "import pandas, pyarrow, streamlit, sklearn; print('OK')"
 ```
 
 ### Paso 6: Ejecutar
+
 ```bash
 # Notebook
 jupyter notebook notebooks/
@@ -264,7 +287,7 @@ streamlit run dashboard/app.py
 ```
 
 El dashboard permite al responsable de mantenimiento:
+
 1. **Identificar** máquinas con mayor riesgo (ranking interactivo + bar chart + alertas críticas luminosas).
 2. **Comprender** señales (telemetría temporal volt/rotate/pressure/vibration + histórico de errores + simulador de anomalías).
 3. **Priorizar** intervención (cola ordenada por `priority_score` = riesgo × criticidad + recomendación principal + plazos de atención).
-
