@@ -120,6 +120,31 @@ Registro de decisiones arquitectónicas y de producto.
 
 ---
 
+## DEC-012
+**Arquitectura de fragmentos globales para simulación en vivo.**
+
+- **Fecha:** 2026-09-30
+- **Contexto:** Streamlit tab switching causaba errores de `@st.fragment` anidados y parpadeo (flickering) al cambiar entre pestañas Telemetría, Anomalías y Mantenimiento. El código original tenía un fragmento por pestaña para actualizaciones en vivo.
+- **Decisión:** 
+  1. **Bucle global único** `_global_sim_loop()` con `@st.fragment(run_every=0.8)` a nivel de módulo en `app.py` — avanza el reloj de simulación via `simulation_tick()` (actualiza `SIM_INDEX_KEY`, `SIM_TIME_KEY`, `SIM_FRAME_KEY`, `SIM_ALERT_KEY`) en **todas** las pestañas simultáneamente.
+  2. **Fragmento único de telemetría** `_live_telemetry_fragment()` con `@st.fragment(run_every=0.8)` — **única fuente de verdad** para el gráfico de telemetría. Usa clave Plotly estable (`live_telemetry_main_chart`) para actualización in-place. Incluye métricas de tendencia (deltas V, vibración, presión).
+  3. **Gráficos de anomalías sin fragmento** — `_render_anomaly_charts()` llamado directamente (sin decorador). FFT usa `st.empty()` + `key="fft_main_chart"` para in-place sin perder zoom/pan. Eventos filtrados por `SIM_TIME_KEY`.
+- **Consecuencia:** Elimina flickering al cambiar tabs, corrige errores de fragmentos anidados, simplifica código (un solo reloj, un solo renderizador de chart), habilita actualizaciones live suaves en todas las secciones.
+
+---
+
+## DEC-013
+**Carga dual GitHub/local con fallback para datos y modelo.**
+
+- **Fecha:** 2026-09-23
+- **Contexto:** Necesidad de carga confiable en producción que funcione offline y sea resiliente a rate limits de GitHub. El dashboard debe poder demostrarse sin conexión a internet.
+- **Decisión:** 
+  - **Datos** (`load_live_demo_data()` en `data_loader.py`): Intenta GitHub (`main` branch, raw URL) → fallback a local `data/processed/live_demo.parquet`. Cache con `@st.cache_data(ttl=3600)`. Sidebar `st.radio(['GitHub', 'Local'])` para forzar origen. Botón "🔄 Recargar" limpia `st.cache_data` y `st.cache_resource` y fuerza rerun.
+  - **Modelo** (`get_model()` en `model_loader.py`): Intenta GitHub (`main` branch, raw URL) → fallback a local `models/baseline_model.joblib`. Cache con `@st.cache_resource(ttl=3600)`. Mismo selector de origen y botón de recarga en sidebar.
+- **Consecuencia:** Dashboard 100% funcional offline, resiliente a caídas de GitHub, usuario controla fuente de datos, cache 1h reduce descargas redundantes, arquitectura consistente para datos y modelo.
+
+---
+
 ## Próximas decisiones
 
-- DEC-012: SHAP explainability (feature importance ya documentada, SHAP opcional).
+- DEC-014: SHAP explainability (feature importance ya documentada, SHAP opcional).

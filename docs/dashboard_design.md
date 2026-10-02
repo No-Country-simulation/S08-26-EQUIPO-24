@@ -12,12 +12,39 @@ El dashboard se compone de:
 
 - `dashboard/app.py` — Entry point principal, orquestación, tema oscuro en CSS y UI.
 - `dashboard/components/` — Componentes modulares de visualización e interacción:
-  - `demo_simulator.py` — Simulador interactivo de telemetría en tiempo real y experimentos de anomalías.
+  - `demo_simulator.py` — Simulador interactivo de telemetría en tiempo real y experimentos de anomalías (controles de reproducción, alertas de flota/máquina, barra de progreso).
   - `risk_table.py` — Tabla de ranking de riesgo con lámparas de alerta parpadeantes (`alert-lamp`) y plazos de atención operativa.
   - `machine_detail.py` — Detalle diagnósticos por activo y recomendaciones preventivas.
-  - `sensor_chart.py` — Gráficos de tendencias temporales de sensores.
+  - `sensor_chart.py` — Gráficos de tendencias temporales de sensores (voltaje, rotación, presión, vibración).
+  - `priority_list.py` — Cola de intervención priorizada por `priority_score` (riesgo × criticidad) con botones de acción y mini-reportes.
+  - `mini_report.py` — Reporte de señales por máquina: feature importance, valores actuales, causa raíz mapeada y acción recomendada.
 - `dashboard/utils/data_loader.py` — Carga de datos reales (`live_demo.parquet`) desde GitHub (`main`) o local.
 - `dashboard/utils/model_loader.py` — Carga del artefacto ML (`baseline_model.joblib`) desde GitHub (`main`) o local.
+
+---
+
+## Arquitectura de Fragmentos Globales (Global Fragment Architecture)
+
+El dashboard utiliza una arquitectura de **fragmentos globales** en Streamlit para lograr actualizaciones en vivo sin parpadeo (flickering) y sin errores al cambiar de pestaña:
+
+### Bucle de simulación global — `_global_sim_loop()`
+- Decorado con `@st.fragment(run_every=0.8)` a nivel de módulo en `app.py`.
+- Ejecuta `simulation_tick()` que avanza el reloj de reproducción (`SIM_INDEX_KEY`, `SIM_TIME_KEY`) y calcula inferencia del modelo para toda la flota en el timestamp actual.
+- Almacena el frame puntuado en `session_state[SIM_FRAME_KEY]` y detecta cambios de nivel de riesgo en `session_state[SIM_ALERT_KEY]`.
+- **Ventaja**: El reloj avanza en **todas** las pestañas simultáneamente (Telemetría, Anomalías, Mantenimiento).
+
+### Fragmento de telemetría en vivo — `_live_telemetry_fragment()`
+- Decorado con `@st.fragment(run_every=0.8)` a nivel de módulo — **única fuente de verdad** para el gráfico de telemetría.
+- Lee `selected_machine`, `PERIOD_HOURS`, `is_simulator_running()` y `get_current_sim_time()`.
+- Renderiza el gráfico Plotly con `key="live_telemetry_main_chart"` (clave estable) → actualización in-place sin recrear el gráfico.
+- Incluye métricas de tendencia: delta de Voltaje, Vibración (inverso), Presión (inverso) via `st.metric`.
+
+### Gráficos de anomalías — Renderizado directo
+- **Sin decorador `@st.fragment`** en la pestaña Anomalías.
+- Se llama directamente a `_render_anomaly_charts()` que renderiza:
+  - Espectro FFT: usa `st.empty()` + `plotly_chart(key="fft_main_chart")` para actualización in-place sin perder zoom/pan del usuario.
+  - Registro crítico de eventos: filtrado por timestamp del simulador.
+- **Corrige**: Errores de Streamlit por fragmentos anidados al cambiar de pestaña y elimina parpadeo.
 
 ---
 
@@ -57,7 +84,7 @@ El dashboard se compone de:
 
 ## 3. Pestañas principales (st.tabs)
 
-### 3.1 Tab 1 — 🎯 Identificar (Riesgo)
+### 3.1 Tab 1 — Identificar (Riesgo)
 
 Elementos:
 
@@ -71,25 +98,23 @@ Colores por nivel:
 - **Moderado:** fondo amarillo claro, texto marrón
 - **Estable:** fondo verde claro, texto verde oscuro
 
-### 3.2 Tab 2 — 📡 Comprender (Señales)
+### 3.2 Tab 2 — Comprender (Señales)
 
 Layout: `st.columns([2, 1])`
 
 **Columna 1 (2/3 ancho):**
 
-- `st.selectbox`: Selector de sensor (temperatura, vibración, presión)
-- `st.line_chart`: Gráfico de línea de telemetría temporal de la máquina seleccionada
-- `st.expander`: Último registro con valores numéricos
+- **Gráfico de telemetría en vivo** (`_live_telemetry_fragment()`): Gráfico Plotly único que muestra voltaje, vibración y presión en serie temporal. Se actualiza in-place cada 0.8s (clave estable `live_telemetry_main_chart`).
+- Etiqueta dinámica: muestra "REPRODUCIENDO · VENTANA {periodo}" en modo live o "HISTÓRICO · VENTANA {periodo}" en modo pausa.
+- **Métricas de tendencia (st.metric)** bajo el gráfico: delta de Voltaje (V), Vibración (mm/s, color inverso), Presión (bar, color inverso) — comparan última lectura vs anterior.
 
 **Columna 2 (1/3 ancho):**
 
-- `st.expander`: Histórico de errores por máquina (fecha, código, descripción)
+- `st.expander`: Histórico de errores por máquina (fecha, código, descripción).
 
-**Métricas dinámicas (st.metric):**
-- Valores en tiempo real (último registro) comparados con el inicio (delta).
-- 🌡️ Voltaje, 📳 Vibración, 💧 Presión.
+---
 
-### 3.3 Tab 3 — 🚀 Priorizar (Acción)
+### 3.3 Tab 3 — Priorizar (Acción)
 
 Elementos:
 
@@ -171,12 +196,15 @@ dashboard/
 ├── app.py
 ├── components/
 │   ├── __init__.py
+│   ├── demo_simulator.py   ← controles reproducción, alertas, barra progreso
 │   ├── risk_table.py
 │   ├── sensor_chart.py
 │   ├── machine_detail.py
-│   └── priority_list.py
+│   ├── priority_list.py    ← cola priorizada + botones acción + mini-reporte
+│   └── mini_report.py      ← feature importance, causa raíz, acción recomendada
 └── utils/
     ├── __init__.py
-    ├── data_loader.py      ← carga live_demo.parquet (GitHub/local)
-    └── model_loader.py     ← carga baseline_model.joblib (GitHub/local)
+    ├── data_loader.py       ← carga live_demo.parquet (GitHub/local, cache 1h)
+    ├── model_loader.py      ← carga baseline_model.joblib (GitHub/local, cache 1h)
+    └── diagnostics.py       ← get_root_cause(), get_action_recommendation()
 ```

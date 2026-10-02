@@ -62,7 +62,10 @@ Demostrar que el sistema permite a un responsable de mantenimiento:
 | Dashboard | ✅ Funcional | `dashboard/` |
 | Model loader | ✅ Funcional | `dashboard/utils/model_loader.py` (GitHub/local + cache) |
 | Data loader | ✅ Funcional | `dashboard/utils/data_loader.py` (carga real, inferencia) |
-| Simulador | ✅ Funcional | `dashboard/components/demo_simulator.py` (telemetría + anomalías) |
+| Simulador | ✅ Funcional | `dashboard/components/demo_simulator.py` (controles reproducción, alertas, barra progreso) |
+| Mini-reporte | ✅ Funcional | `dashboard/components/mini_report.py` (feature importance, causa raíz, acción) |
+| Cola priorizada | ✅ Funcional | `dashboard/components/priority_list.py` (ranking risk × criticidad) |
+| Diagnósticos | ✅ Funcional | `dashboard/utils/diagnostics.py` (causa raíz, acción recomendada) |
 | Tests | ✅ Pasando | `tests/test_prevalence.py`, `tests/test_priority.py` |
 
 ---
@@ -126,10 +129,10 @@ cd dashboard && streamlit run app.py
 
 **Gráficos en vivo (telemetría + diagnóstico):**
 
-- `simulation_tick()` extraído de `demo_simulator.py` como fragmento global (`@st.fragment(run_every=0.8)`) que avanza el reloj de simulación en **todas** las secciones.
-- **Modo en vivo** toggle en el encabezado de telemetría: inicia/pausa la simulación con indicador visual "● EN VIVO".
-- El gráfico de telemetría se actualiza cada 0.8s con la ventana de datos simulada.
-- El diagnóstico (FFT + eventos) se filtra por el timestamp del simulador y se re-renderiza vía `@st.fragment(run_every=0.8)`.
+- **Bucle global** `_global_sim_loop()` con `@st.fragment(run_every=0.8)` a nivel de módulo en `app.py` — avanza el reloj de simulación en **todas** las secciones (Telemetría, Anomalías, Mantenimiento) via `simulation_tick()`.
+- **Fragmento único de telemetría** `_live_telemetry_fragment()` con `@st.fragment(run_every=0.8)` — **única fuente de verdad** para el gráfico de telemetría. Renderiza gráfico Plotly con clave estable (`live_telemetry_main_chart`) → actualización in-place cada 0.8s. Incluye métricas de tendencia (delta Voltaje, Vibración, Presión).
+- **Diagnóstico (FFT + eventos)**: Renderizado **DIRECTO** via `_render_anomaly_charts()` **SIN** `@st.fragment`. El gráfico FFT usa `st.empty()` + `key="fft_main_chart"` para actualización in-place sin perder zoom/pan del usuario. Eventos filtrados por timestamp del simulador.
+- **Corrección clave**: Eliminado fragmento anidado en pestaña Anomalías → **fixea tab switching flickering** y errores de Streamlit.
 
 **Mini-reporte de señales (mantenimiento):**
 
@@ -137,6 +140,8 @@ cd dashboard && streamlit run app.py
 - `render_mini_report()` muestra: ranking de importancia, lecturas en vivo, causa raíz (mapeos industriales) y acción recomendada (intervenir/inspeccionar/monitorear).
 - Botón "📋 Reporte" en cada fila de la cola de prioridad y en las hero-cards del top 3.
 - `utils/diagnostics.py` nuevo: `get_root_cause()` y `get_action_recommendation()` compartidos entre diagnóstico y mini-reporte.
+
+**Nota sobre el simulador**: `demo_simulator.py` ahora **solo maneja controles y alertas** (period selector, botones prev/start/pause/next/reset, alertas de flota/máquina, barra de progreso). El renderizado del gráfico de telemetría se delega al fragmento global `_live_telemetry_fragment()` (se pasa `render_chart=None`).
 
 ---
 

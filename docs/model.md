@@ -185,13 +185,33 @@ S08-26-EQUIPO-24/main/models/baseline_model.joblib
 
 | Módulo | Función | Estado |
 |--------|----------|--------|
-| `app.py` | Orquestación principal | ✅ **Completo** (carga de datos + metadata del modelo) |
-| `components/risk_table.py` | Tabla de riesgo por máquina | ✅ **Compatible** con data real |
-| `components/sensor_chart.py` | Gráficos de telemetría | ✅ **Compatible** con data real |
-| `components/machine_detail.py` | Histórico de errores | ✅ **Compatible** con data real |
-| `components/demo_simulator.py` | Simulador interactivo | ✅ **Completo** |
-| `utils/data_loader.py` | Loader de datos reales | ✅ **Nuevo** (desde mock data) |
-| `utils/model_loader.py` | Loader de modelo | ✅ **Funcionando** (desde GitHub/local) |
+| `app.py` | Orquestación principal + arquitectura fragmentos globales | ✅ **Completo** (carga de datos + metadata del modelo + _global_sim_loop + _live_telemetry_fragment) |
+| `components/risk_table.py` | Tabla de riesgo por máquina con lámparas animadas | ✅ **Compatible** con data real |
+| `components/sensor_chart.py` | Gráficos de telemetría (delegado a fragmento global) | ✅ **Compatible** con data real |
+| `components/machine_detail.py` | Histórico de errores + diagnóstico | ✅ **Compatible** con data real |
+| `components/demo_simulator.py` | Simulador: controles reproducción, alertas, barra progreso | ✅ **Completo** (chart delegado a _live_telemetry_fragment) |
+| `components/priority_list.py` | Cola priorizada risk × criticidad + botones acción + mini-reporte | ✅ **Completo** |
+| `components/mini_report.py` | Reporte señales: feature importance, causa raíz, acción | ✅ **Completo** |
+| `utils/data_loader.py` | Loader datos reales + inferencia batch | ✅ **Nuevo** (GitHub/local, cache 1h) |
+| `utils/model_loader.py` | Loader modelo | ✅ **Funcionando** (GitHub/local, cache 1h) |
+| `utils/diagnostics.py` | Causa raíz mapeada + recomendación acción | ✅ **Nuevo** (compartido diagnóstico/mini-reporte) |
+
+### **Pipeline de Inferencia en el Dashboard**
+
+El dashboard ejecuta **inferencia batch una sola vez** al cargar:
+
+1. `compute_risk_from_model(live_df)` recibe el DataFrame completo (87,700 filas, 100 máquinas, 46 features).
+2. Carga el modelo via `get_model()` (cached, GitHub-first fallback local).
+3. Ejecuta `model.predict_proba()` sobre **todas las filas** → `failure_probability`.
+4. Aplica `decision_threshold = 0.5591` (desde el artefacto) → columna binaria `prediction`.
+5. Deriva `risk_score` (0–100), `risk_level` (Crítico/Moderado/Estable), `criticality`, `priority_score`, `priority`.
+6. Genera 4 DataFrames listos para UI: `df_machines`, `df_risk`, `df_telemetry`, `df_errors`.
+7. Resultados **compartidos across all tabs** — no hay re-inferencia por pestaña.
+
+**Uso del threshold en dashboard:**
+- El `decision_threshold = 0.5591` se lee del artefacto (`meta["decision_threshold"]`).
+- Se usa en `compute_risk_from_model()` para la predicción binaria (`prediction = probs >= threshold`).
+- El `risk_level` se deriva del `risk_score` (probabilidad × 100) con umbrales internos: <30 Estable, 30-60 Moderado, ≥60 Crítico.
 
 ### **✅ METADATOS DEL MODELO EN UI**
 
